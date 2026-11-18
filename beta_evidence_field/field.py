@@ -2,11 +2,12 @@ import numpy as np
 
 from .kernels import GaussianKernel
 from .observation import OccupancyObservation
+from .prior import OccupancyPrior
 from .query import OccupancyQuery
 
 
-DEFAULT_PRIOR_VALUE   = 1.0
-DEFAULT_SUPPORT_SIGMA = 3.0
+DEFAULT_SUPPORT_SIGMA          = 3.0
+DEFAULT_TEMPORAL_SUPPORT_SIGMA = 3.0
 
 
 class OccupancyField:
@@ -14,12 +15,12 @@ class OccupancyField:
 
 
     def __init__(self,
-                 surface_covariance : np.ndarray,
-                 free_covariance    : np.ndarray,
-                 temporal_variance  : float,
-                 occupancy_prior    : float = DEFAULT_PRIOR_VALUE,
-                 free_prior         : float = DEFAULT_PRIOR_VALUE,
-                 support_sigma      : float = DEFAULT_SUPPORT_SIGMA):
+                 surface_covariance     : np.ndarray,
+                 free_covariance        : np.ndarray,
+                 temporal_variance      : float,
+                 prior                  : OccupancyPrior,
+                 support_sigma          : float = DEFAULT_SUPPORT_SIGMA,
+                 temporal_support_sigma : float = DEFAULT_TEMPORAL_SUPPORT_SIGMA):
 
         surface_covariance = np.asarray(surface_covariance, dtype = float)
         free_covariance    = np.asarray(free_covariance,    dtype = float)
@@ -33,17 +34,22 @@ class OccupancyField:
         if free_covariance.shape != surface_covariance.shape:
             raise ValueError("free_covariance must match surface_covariance")
 
-        if temporal_variance <= 0.0:
-            raise ValueError("temporal_variance must be positive")
+        if not np.all(np.isfinite(surface_covariance)):
+            raise ValueError("surface_covariance must be finite")
 
-        if occupancy_prior <= 0.0:
-            raise ValueError("occupancy_prior must be positive")
+        if not np.all(np.isfinite(free_covariance)):
+            raise ValueError("free_covariance must be finite")
 
-        if free_prior <= 0.0:
-            raise ValueError("free_prior must be positive")
+        if not np.isfinite(temporal_variance) or temporal_variance <= 0.0:
+            raise ValueError("temporal_variance must be finite and positive")
 
-        if support_sigma <= 0.0:
-            raise ValueError("support_sigma must be positive")
+        if not np.isfinite(support_sigma) or support_sigma <= 0.0:
+            raise ValueError("support_sigma must be finite and positive")
+
+        if (not np.isfinite(temporal_support_sigma)
+                or temporal_support_sigma <= 0.0):
+            raise ValueError(
+                "temporal_support_sigma must be finite and positive")
 
         self.dimension = surface_covariance.shape[0]
 
@@ -52,36 +58,161 @@ class OccupancyField:
         self.temporal_kernel = GaussianKernel(
             covariance = np.array([[temporal_variance]]))
 
-        self.occupancy_prior = float(occupancy_prior)
-        self.free_prior      = float(free_prior)
-        self.support_sigma   = float(support_sigma)
+        self.prior                  = prior
+        self.support_sigma          = float(support_sigma)
+        self.temporal_support_sigma = float(temporal_support_sigma)
 
-        self.batches : list[list[OccupancyObservation]] = []
-
-
-    @property
-    def observations(self) -> list[OccupancyObservation]:
-        """Returns all observations in acquisition order."""
-
-        return [observation
-                for batch in self.batches
-                for observation in batch]
+        self.observations : list[OccupancyObservation] = []
 
 
-    @property
-    def time(self) -> float | None:
-        """Returns the latest observation time."""
+    def add(self,
+            observations : list[OccupancyObservation]
+            ) -> "list[OccupancyObservation]":
+        """Adds observations acquired at the same time."""
 
-        return self.batches[-1][0].time if self.batches else None
+        observations = list(observations)
+
+        if not observations:
+            return observations
+
+        time = observations[0].time
+
+        if not np.isfinite(time):
+            raise ValueError("observation time must be finite")
+
+        if self.observations and time < self.observations[-1].time:
+            raise ValueError(
+                "observations must be added in chronological order")
+
+        for observation in observations:
+
+            if observation.dimension != self.dimension:
+                raise ValueError(
+                    f"observation must be {self.dimension}-dimensional")
+
+            if not np.isclose(observation.time, time):
+                raise ValueError(
+                    "observations added together must have the same time")
+
+        self.observations.extend(observations)
+        self._prune(time)
+
+        return observations
 
 
-    @property
-    def prior(self) -> OccupancyQuery:
-        """Returns the unsupported scalar prior."""
+    def query(self,
+          points : np.ndarray,
+          time   : float | None = None) -> OccupancyQuery:
+        
+        """Queries the occupancy field at one or more locations."""
 
-        return OccupancyQuery(alpha   = self.occupancy_prior,
-                              beta    = self.free_prior,
-                              support = False)
+        points, scalar = self._prepare(points)
+
+        alpha, beta = self.prior.evaluate(points)
+        alpha       = np.asarray(alpha, dtype = float)
+        beta        = np.asarray(beta,  dtype = float)
+        support     = np.zeros(len(points), dtype = bool)
+
+        if alpha.shape != (len(points),):
+            raise ValueError("prior alpha must have shape (n,)")
+
+        if beta.shape != (len(points),):
+            raise ValueError("prior beta must have shape (n,)")
+
+        if not self.observations:
+
+            if scalar:
+                return OccupancyQuery(alpha   = float(alpha[0]),
+                                    beta    = float(beta[0]),
+                                    support = False)
+
+            return OccupancyQuery(alpha   = alpha,
+                                beta    = beta,
+                                support = support)
+
+        time = (self.observations[-1].time
+                if time is None
+                else float(time))
+
+        if not np.isfinite(time):
+            raise ValueError("time must be finite")
+
+        observations = [observation
+                        for observation in self.observations
+                        if observation.time <= time]
+
+        if not observations:
+
+            if scalar:
+                return OccupancyQuery(alpha   = float(alpha[0]),
+                                    beta    = float(beta[0]),
+                                    support = False)
+
+            return OccupancyQuery(alpha   = alpha,
+                                beta    = beta,
+                                support = support)
+
+        origins    = np.asarray([o.origin          for o in observations], dtype = float)
+        directions = np.asarray([o.direction       for o in observations], dtype = float)
+        endpoints  = np.asarray([o.endpoint        for o in observations], dtype = float)
+        returned   = np.asarray([o.returned        for o in observations], dtype = bool)
+        times      = np.asarray([o.time            for o in observations], dtype = float)
+        weights    = np.asarray([o.evidence_weight for o in observations], dtype = float)
+
+
+        weights *= self.temporal_kernel.evaluate(
+            points = times[:, None],
+            centre = np.array([time]))
+
+
+        precision = np.einsum("ri,ij,rj->r",
+                            directions,
+                            self.free_kernel.precision,
+                            directions,
+                            optimize = True)
+
+        free_evidence = self.free_kernel.convolve_line(
+            points = points[None, :, :],
+            start  = origins[:, None, :],
+            end    = endpoints[:, None, :])
+
+        beta += np.sum(
+            (weights*np.sqrt(precision/(2.0*np.pi)))[:, None]
+            * free_evidence,
+            axis = 0)
+
+
+        if np.any(returned):
+
+            endpoints = endpoints[returned]
+            weights   = weights[returned]
+
+            surface_evidence = self.surface_kernel.evaluate(
+                points = points[None, :, :],
+                centre = endpoints[:, None, :])
+
+            alpha += np.sum(
+                weights[:, None]*surface_evidence,
+                axis = 0)
+
+            surface_distance = self.surface_kernel.distance(
+                points = points[None, :, :],
+                centre = endpoints[:, None, :])
+
+            support = np.any(
+                surface_distance <= self.support_sigma**2,
+                axis = 0)
+
+
+        if scalar:
+            return OccupancyQuery(alpha   = float(alpha[0]),
+                                beta    = float(beta[0]),
+                                support = bool(support[0]))
+
+        return OccupancyQuery(alpha   = alpha,
+                            beta    = beta,
+                            support = support)
+
 
 
     def _prepare(self,
@@ -98,200 +229,38 @@ class OccupancyField:
                 f"points must have shape ({self.dimension},) "
                 f"or (n, {self.dimension})")
 
+        if not np.all(np.isfinite(points)):
+            raise ValueError("points must be finite")
+
         return points, scalar
 
 
-    def _prior(self,
-               count  : int,
-               scalar : bool) -> OccupancyQuery:
+    def _prune(self,
+               time : float) -> None:
 
-        if scalar:
-            return self.prior
+        times = np.asarray([observation.time
+                            for observation in self.observations],
+                           dtype = float)
 
-        return OccupancyQuery(
-            alpha   = np.full(count,
-                              self.occupancy_prior,
-                              dtype = float),
-            beta    = np.full(count,
-                              self.free_prior,
-                              dtype = float),
-            support = np.zeros(count,
-                               dtype = bool))
-
-
-    def _observations(self,
-                      time : float) -> tuple[np.ndarray,
-                                            np.ndarray,
-                                            np.ndarray,
-                                            np.ndarray,
-                                            np.ndarray,
-                                            np.ndarray]:
-
-        observations = [observation
-                        for batch in self.batches
-                        if batch[0].time <= time
-                        for observation in batch]
-
-        origins = np.asarray(
-            [observation.origin
-             for observation in observations],
-            dtype = float)
-
-        directions = np.asarray(
-            [observation.direction
-             for observation in observations],
-            dtype = float)
-
-        ranges = np.asarray(
-            [observation.range
-             for observation in observations],
-            dtype = float)
-
-        returned = np.asarray(
-            [observation.returned
-             for observation in observations],
-            dtype = bool)
-
-        times = np.asarray(
-            [observation.time
-             for observation in observations],
-            dtype = float)
-
-        weights = np.asarray(
-            [observation.evidence_weight
-             for observation in observations],
-            dtype = float)
-
-        return origins, directions, ranges, returned, times, weights
-
-
-    def add(self,
-            observations : OccupancyObservation |
-                           list[OccupancyObservation]
-            ) -> list[OccupancyObservation]:
-        """Adds one observation or one simultaneous observation batch."""
-
-        observations = ([observations]
-                        if isinstance(observations, OccupancyObservation)
-                        else list(observations))
-
-        if not observations:
-            return observations
-
-        time = observations[0].time
-
-        for observation in observations:
-
-            if observation.dimension != self.dimension:
-                raise ValueError(
-                    f"observation must be {self.dimension}-dimensional")
-
-            if not np.isclose(observation.time, time):
-                raise ValueError(
-                    "observations added together must have the same time")
-
-        self.batches.append(observations)
-
-        return observations
-
-
-    def query(self,
-              points : np.ndarray,
-              time   : float | None = None) -> OccupancyQuery:
-        """Queries the occupancy field at one or more spatial points.
-
-        Args:
-            points: One point with shape `(dimension,)`, or multiple points
-                with shape `(n, dimension)`.
-            time: Query time. The latest observation time is used when omitted.
-
-        Returns:
-            Beta occupancy parameters and observation support at the query
-            points.
-        """
-
-        points, scalar = self._prepare(points)
-        time           = self.time if time is None else float(time)
-
-        if time is None:
-            return self._prior(len(points), scalar)
-
-        origins, directions, ranges, returned, times, weights = (
-            self._observations(time))
-
-        if not len(origins):
-            return self._prior(len(points), scalar)
-
-        endpoints = origins + ranges[:, None]*directions
-
-
-        temporal_weights = self.temporal_kernel.evaluate(
+        distance = self.temporal_kernel.distance(
             points = times[:, None],
             centre = np.array([time]))
 
-        weights = weights*temporal_weights
+        retained = distance <= self.temporal_support_sigma**2
 
-
-        precision = np.einsum("ri,ij,rj->r",
-                            directions,
-                            self.free_kernel.precision,
-                            directions,
-                            optimize = True)
-
-        free_evidence = self.free_kernel.convolve_line(
-            points = points[None, :, :],
-            start  = origins[:, None, :],
-            end    = endpoints[:, None, :])
-
-        free_weights = (
-            weights*np.sqrt(precision/(2.0*np.pi)))
-
-        beta = (
-            self.free_prior
-            + np.sum(free_weights[:, None]*free_evidence,
-                    axis = 0))
-
-
-        surface_evidence = self.surface_kernel.evaluate(
-            points = points[None, :, :],
-            centre = endpoints[:, None, :])
-
-        surface_weights = weights*returned
-
-        alpha = (
-            self.occupancy_prior
-            + np.sum(surface_weights[:, None]*surface_evidence,
-                    axis = 0))
-
-
-        surface_distance = self.surface_kernel.distance(
-            points = points[None, :, :],
-            centre = endpoints[:, None, :])
-
-        support = np.any(
-            returned[:, None]
-            & (surface_distance <= self.support_sigma**2),
-            axis = 0)
-
-
-        if scalar:
-
-            return OccupancyQuery(alpha   = float(alpha[0]),
-                                beta    = float(beta[0]),
-                                support = bool(support[0]))
-
-        return OccupancyQuery(alpha   = alpha,
-                            beta    = beta,
-                            support = support)
+        self.observations = [
+            observation
+            for observation, keep in zip(self.observations, retained)
+            if keep]
 
 
     def clear(self) -> None:
         """Removes all observations from the field."""
 
-        self.batches.clear()
+        self.observations.clear()
 
 
     def __len__(self) -> int:
-        """Returns the number of observations in the field."""
+        """Returns the number of currently retained observations."""
 
-        return sum(len(batch) for batch in self.batches)
+        return len(self.observations)
