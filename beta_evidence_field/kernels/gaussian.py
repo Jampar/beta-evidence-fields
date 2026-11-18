@@ -1,8 +1,8 @@
 """Gaussian kernel operations for continuous evidence fields."""
 
-import numpy as np
-
 from scipy.special import erf
+
+import numpy as np
 
 
 class GaussianKernel:
@@ -45,7 +45,8 @@ class GaussianKernel:
             np.linalg.cholesky(covariance)
 
         except np.linalg.LinAlgError as error:
-            raise ValueError("Covariance must be positive definite.") from error
+            raise ValueError(
+                "Covariance must be positive definite.") from error
 
         self.covariance = covariance
         self.precision  = np.linalg.inv(covariance)
@@ -63,20 +64,37 @@ class GaussianKernel:
                  centre : np.ndarray) -> np.ndarray:
         """Calculates squared Mahalanobis distance from a kernel centre.
 
+        Leading dimensions are broadcast according to NumPy broadcasting
+        rules. The final axis represents spatial dimension.
+
         Args:
             points: Points at which to evaluate the distance.
             centre: Centre of the Gaussian kernel.
 
         Returns:
-            Squared Mahalanobis distance of each point from the centre.
+            Squared Mahalanobis distance over the broadcast dimensions.
+
+        Raises:
+            ValueError: If points or centre do not match the spatial dimension
+                of the kernel.
         """
 
-        difference = np.asarray(points, dtype = float) - centre
+        points = np.asarray(points, dtype = float)
+        centre = np.asarray(centre, dtype = float)
+
+        if points.shape[-1] != self.dimension:
+            raise ValueError("Point dimension does not match covariance.")
+
+        if centre.shape[-1] != self.dimension:
+            raise ValueError("Centre dimension does not match covariance.")
+
+        difference = points - centre
 
         return np.einsum("...i,ij,...j->...",
                          difference,
                          self.precision,
-                         difference)
+                         difference,
+                         optimize = True)
 
 
     def evaluate(self,
@@ -84,85 +102,95 @@ class GaussianKernel:
                  centre : np.ndarray) -> np.ndarray:
         """Evaluates the unnormalised Gaussian kernel.
 
+        Leading dimensions are broadcast according to NumPy broadcasting
+        rules. The final axis represents spatial dimension.
+
         Args:
             points: Points at which to evaluate the kernel.
             centre: Centre of the Gaussian kernel.
 
         Returns:
-            Kernel value at each point.
+            Kernel values over the broadcast dimensions.
         """
 
-        return np.exp(-0.5 * self.distance(points = points,
-                                           centre = centre))
+        return np.exp(-0.5*self.distance(points = points,
+                                         centre = centre))
 
 
     def convolve_line(self,
                       points : np.ndarray,
                       start  : np.ndarray,
                       end    : np.ndarray) -> np.ndarray:
-        """Evaluates the Gaussian kernel integrated along a finite line segment.
+        """Evaluates the Gaussian kernel integrated along finite line segments.
 
-        Computes the analytic line integral of the kernel between `start` and
-        `end` for each query point. The formulation is dimension agnostic and
-        uses the covariance-induced metric of the kernel.
+        Leading dimensions are broadcast according to NumPy broadcasting
+        rules. The final axis represents spatial dimension.
 
         Args:
             points: Points at which to evaluate the line convolution.
-            start: Start of the finite line segment.
-            end: End of the finite line segment.
+            start: Start of each finite line segment.
+            end: End of each finite line segment.
 
         Returns:
-            Integrated Gaussian kernel value at each query point.
+            Integrated Gaussian kernel values over the broadcast dimensions.
 
         Raises:
-            ValueError: If the query points or line endpoints do not match the
-                spatial dimension of the kernel.
+            ValueError: If points or line endpoints do not match the spatial
+                dimension of the kernel.
         """
 
         points = np.asarray(points, dtype = float)
         start  = np.asarray(start,  dtype = float)
         end    = np.asarray(end,    dtype = float)
 
-        scalar = points.ndim == 1
-
-        if scalar:
-            points = points[None, :]
-
         if points.shape[-1] != self.dimension:
             raise ValueError("Point dimension does not match covariance.")
 
-        if start.shape != (self.dimension,):
-            raise ValueError("Line start has incorrect dimension.")
+        if start.shape[-1] != self.dimension:
+            raise ValueError("Line start dimension does not match covariance.")
 
-        if end.shape != (self.dimension,):
-            raise ValueError("Line end has incorrect dimension.")
+        if end.shape[-1] != self.dimension:
+            raise ValueError("Line end dimension does not match covariance.")
 
         segment = end - start
-        length  = np.linalg.norm(segment)
+        length  = np.linalg.norm(segment, axis = -1)
 
-        if np.isclose(length, 0.0):
-            values = np.zeros(len(points))
+        valid       = ~np.isclose(length, 0.0)
+        safe_length = np.where(valid, length, 1.0)
 
-            return values[0] if scalar else values
+        direction  = segment/safe_length[..., None]
+        difference = points - start
 
-        direction       = segment/length
-        difference      = points - start
-        alpha           = direction @ self.precision @ direction
+        alpha = np.einsum("...i,ij,...j->...",
+                          direction,
+                          self.precision,
+                          direction,
+                          optimize = True)
 
-        beta            = np.einsum("i,ij,nj->n",
-                                    direction,
-                                    self.precision,
-                                    difference)
-       
-        gamma           = np.einsum("ni,ij,nj->n",
-                                    difference,
-                                    self.precision,
-                                    difference)
+        beta = np.einsum("...i,ij,...j->...",
+                         direction,
+                         self.precision,
+                         difference,
+                         optimize = True)
 
-        exponent        = gamma - beta**2/alpha
-        scale           = np.sqrt(2.0*alpha)
+        gamma = np.einsum("...i,ij,...j->...",
+                          difference,
+                          self.precision,
+                          difference,
+                          optimize = True)
 
-        longitudinal    = (erf((alpha*length - beta)/scale) + erf(beta/scale))
-        values          = (np.sqrt(np.pi/(2.0*alpha)) * np.exp(-0.5*exponent) * longitudinal)
+        safe_alpha = np.where(valid, alpha, 1.0)
 
-        return values[0] if scalar else values
+        exponent = gamma - beta**2/safe_alpha
+        scale    = np.sqrt(2.0*safe_alpha)
+
+        longitudinal = (erf((safe_alpha*safe_length - beta)/scale)
+                        + erf(beta/scale))
+
+        values = (np.sqrt(np.pi/(2.0*safe_alpha))
+                  * np.exp(-0.5*exponent)
+                  * longitudinal)
+
+        return np.where(valid,
+                        values,
+                        0.0)
