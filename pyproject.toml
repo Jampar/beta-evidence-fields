@@ -3,6 +3,7 @@ name = "beta-evidence-fields"
 version = "0.1.0"
 description = "A dimension-agnostic Python library for continuous probabilistic occupancy fields from range-sensor evidence."
 requires-python = ">=3.10"
+
 dependencies = [
     "numpy",
     "scipy",
@@ -13,4 +14,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/occupancy_field"]
+packages = ["src/beta_evidence_field"]
