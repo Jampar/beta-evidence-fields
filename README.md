@@ -192,36 +192,23 @@ The package is configured as an editable dependency in the Pixi environment.
 ```python
 import numpy as np
 
-from beta_evidence_field import (
-    OccupancyField,
-    OccupancyObservation,
-    OccupancyPrior
-)
+from beta_evidence_field import (OccupancyField, OccupancyObservation, OccupancyPrior)
 
 
-field = OccupancyField(
-    surface_covariance = 0.1**2*np.eye(2),
-    free_covariance    = 0.2**2*np.eye(2),
-    temporal_variance  = 10.0**2,
-    prior              = OccupancyPrior()
-)
+field       = OccupancyField(surface_covariance = 0.1**2*np.eye(2),
+                             free_covariance    = 0.2**2*np.eye(2),
+                             temporal_variance  = 10.0**2,
+                             prior              = OccupancyPrior())
 
 
-observation = OccupancyObservation(
-    origin    = np.array([0.0, 0.0]),
-    direction = np.array([1.0, 0.0]),
-    range     = 2.0,
-    returned  = True,
-    time      = 0.0
-)
+observation = OccupancyObservation(origin    = np.array([0.0, 0.0]),
+                                   direction = np.array([1.0, 0.0]),
+                                   range     = 2.0,
+                                   returned  = True,
+                                   time      = 0.0)
 
 field.add([observation])
-
-
-query = field.query(
-    points = np.array([2.0, 0.0]),
-    time   = 0.0
-)
+query = field.query(points = np.array([2.0, 0.0]), time   = 0.0)
 
 print(query.alpha)
 print(query.beta)
@@ -234,11 +221,9 @@ print(query.support)
 Multiple locations can be evaluated simultaneously:
 
 ```python
-points = np.array([
-    [0.0, 0.0],
-    [1.0, 0.0],
-    [2.0, 0.0]
-])
+points = np.array([[0.0, 0.0],
+                   [1.0, 0.0],
+                   [2.0, 0.0]])
 
 query = field.query(points)
 ```
