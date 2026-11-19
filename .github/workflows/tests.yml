@@ -29,3 +29,6 @@ jobs:
 
       - name: Occupancy Observation
         run: pixi run pytest tests/test_observation.py
+
+      - name: Occupancy Field
+        run: pixi run pytest tests/test_field.py
