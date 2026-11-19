@@ -8,7 +8,26 @@ Beta Evidence Fields (BEFs) represents occupancy as a continuous Beta distributi
 
 ## Mathematical Definition
 
-At spatial location $\mathbf{x}$ and time $t$, the occupancy probability is represented by a Beta distribution:
+Define an unnormalised Gaussian kernel with covariance $\Sigma$:
+
+```math
+k_{\Sigma}(\mathbf{x},\boldsymbol{\mu})
+=
+\exp\left(
+-\frac{1}{2}
+(\mathbf{x}-\boldsymbol{\mu})^\mathsf{T}
+\Sigma^{-1}
+(\mathbf{x}-\boldsymbol{\mu})
+\right).
+```
+
+Each range observation consists of an origin $\mathbf{o}_i$, unit direction $\mathbf{d}_i$, range $\rho_i$, acquisition time $t_i$, and evidence weight $w_i$. Its endpoint is
+
+```math
+\mathbf{e}_i = \mathbf{o}_i + \rho_i\mathbf{d}_i.
+```
+
+At position $\mathbf{x}$ and time $t$, the field is represented by
 
 ```math
 p(\mathbf{x},t)
@@ -20,38 +39,40 @@ p(\mathbf{x},t)
 \right).
 ```
 
-The field parameters are constructed from a prior and the accumulated evidence from $N$ range observations:
+Occupied evidence is accumulated around returned endpoints:
 
 ```math
 \alpha(\mathbf{x},t)
 =
 \alpha_0(\mathbf{x})
 +
-\sum_{i=1}^{N}
-r_i w_i
-k_t(t,t_i)
-k_s(\mathbf{x},\mathbf{e}_i),
+\sum_{i \in \mathcal{R}}
+w_i
+k_{\sigma_t^2}(t,t_i)
+k_{\Sigma_s}(\mathbf{x},\mathbf{e}_i),
 ```
+
+where $\mathcal{R}$ is the set of observations that produced a range return.
+
+Free-space evidence is accumulated continuously along every observation ray:
 
 ```math
 \beta(\mathbf{x},t)
 =
 \beta_0(\mathbf{x})
 +
-\sum_{i=1}^{N}
+\sum_i
 w_i
-k_t(t,t_i)
+k_{\sigma_t^2}(t,t_i)
 \sqrt{
 \frac{
-\mathbf{d}_i^{\mathsf{T}}
-\Sigma_f^{-1}
-\mathbf{d}_i
+\mathbf{d}_i^\mathsf{T}\Sigma_f^{-1}\mathbf{d}_i
 }{
 2\pi
 }
 }
 \int_0^{\rho_i}
-k_f
+k_{\Sigma_f}
 \left(
 \mathbf{x},
 \mathbf{o}_i+s\mathbf{d}_i
@@ -59,79 +80,18 @@ k_f
 \,ds.
 ```
 
-Each observation is defined by:
+Here, $\Sigma_s$ controls the spatial extent of occupied evidence, $\Sigma_f$ controls the spatial extent of free-space evidence, and $\sigma_t^2$ controls temporal decay.
 
-- $\mathbf{o}_i$: sensor origin
-- $\mathbf{d}_i$: unit ray direction
-- $\rho_i$: ray range
-- $\mathbf{e}_i=\mathbf{o}_i+\rho_i\mathbf{d}_i$: ray endpoint
-- $r_i\in\{0,1\}$: whether the observation produced a return
-- $t_i$: observation time
-- $w_i$: evidence weight
-
-Only returned observations contribute occupied evidence to $\alpha$. Every retained observation contributes free-space evidence to $\beta$ along its finite ray.
-
-### Spatial Evidence
-
-The unnormalised spatial Gaussian kernel is
-
-```math
-k(\mathbf{x},\boldsymbol{\mu})
-=
-\exp
-\left(
--\frac{1}{2}
-(\mathbf{x}-\boldsymbol{\mu})^{\mathsf{T}}
-\Sigma^{-1}
-(\mathbf{x}-\boldsymbol{\mu})
-\right).
-```
-
-Separate covariance matrices $\Sigma_s$ and $\Sigma_f$ define the occupied-surface and free-space kernels respectively. Free-space evidence is evaluated using the analytic integral of the Gaussian kernel along each finite observation ray.
-
-### Temporal Evidence
-
-Evidence is temporally weighted using
-
-```math
-k_t(t,t_i)
-=
-\exp
-\left(
--\frac{(t-t_i)^2}{2\sigma_t^2}
-\right),
-```
-
-where $\sigma_t^2$ is the configured temporal variance.
-
-### Occupancy Statistics
-
-The expected occupancy probability is
+The resulting occupancy estimate is
 
 ```math
 \mathbb{E}[p(\mathbf{x},t)]
 =
-\frac{
-\alpha(\mathbf{x},t)
-}{
-\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)
-}.
+\frac{\alpha(\mathbf{x},t)}
+{\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)},
 ```
 
-The occupancy variance is
-
-```math
-\mathrm{Var}[p(\mathbf{x},t)]
-=
-\frac{
-\alpha(\mathbf{x},t)\beta(\mathbf{x},t)
-}{
-\left(\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)\right)^2
-\left(\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)+1\right)
-}.
-```
-
-The evidence concentration is
+with evidence concentration
 
 ```math
 \lambda(\mathbf{x},t)
@@ -139,29 +99,7 @@ The evidence concentration is
 \alpha(\mathbf{x},t)+\beta(\mathbf{x},t).
 ```
 
-This separates the estimated occupancy probability from the amount of evidence supporting that estimate.
-
-### Support
-
-A location is spatially supported when it lies within the configured Mahalanobis distance of at least one returned observation endpoint:
-
-```math
-(\mathbf{x}-\mathbf{e}_i)^{\mathsf{T}}
-\Sigma_s^{-1}
-(\mathbf{x}-\mathbf{e}_i)
-\leq
-\sigma_{\mathrm{support}}^2.
-```
-
-Observations are retained temporally while
-
-```math
-\frac{(t-t_i)^2}{\sigma_t^2}
-\leq
-\sigma_{\mathrm{temporal}}^2.
-```
-
-Support is distinct from occupancy probability and evidence concentration. It indicates whether a location is spatially supported by returned range evidence.
+The concentration captures how much evidence supports the estimate, allowing locations with the same expected occupancy to retain different levels of evidential certainty.
 
 ## Features
 
