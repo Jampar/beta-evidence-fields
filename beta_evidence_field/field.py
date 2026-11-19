@@ -160,21 +160,27 @@ class OccupancyField:
                                     directions,
                                     optimize = True)
 
-        beta           += np.sum((weights * np.sqrt(precision / (2.0*np.pi)))[:, None] * free_evidence, axis = 0)
+        free_evidence  *= np.sqrt(precision/(2.0*np.pi))[:, None]
 
         if np.any(returned):
-            endpoints        = endpoints[returned]
-            weights          = weights[returned]
 
             surface_evidence = self.surface_kernel.evaluate(points = points[None, :, :],
                                                             centre = endpoints[:, None, :])
-            
-            surface_distance = self.surface_kernel.distance(points = points[None, :, :], 
-                                                            centre = endpoints[:, None, :])
-            
-            alpha   += np.sum(weights[:, None] * surface_evidence,          axis = 0)
-            support  = np.any(surface_distance <= self.support_sigma**2,    axis = 0)
 
+            free_evidence[returned] *= 1.0 - surface_evidence[returned]
+
+            alpha += np.sum(weights[returned, None]
+                            * surface_evidence[returned],
+                            axis = 0)
+
+            surface_distance = self.surface_kernel.distance(points = points[None, :, :],
+                                                            centre = endpoints[:, None, :])
+
+            support = np.any(returned[:, None]
+                            & (surface_distance <= self.support_sigma**2),
+                            axis = 0)
+
+        beta += np.sum(weights[:, None] * free_evidence, axis = 0)
 
         if scalar:
             return OccupancyQuery(alpha   = float(alpha[0]),
