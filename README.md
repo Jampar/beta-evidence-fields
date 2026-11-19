@@ -1,4 +1,4 @@
-# Beta-Evidence-Fields
+# Beta Evidence Fields
 
 [![Beta Field Unit Tests](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml/badge.svg)](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml)
 
