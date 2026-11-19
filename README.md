@@ -82,16 +82,29 @@ k_{\Sigma_f}
 
 Here, $\Sigma_s$ controls the spatial extent of occupied evidence, $\Sigma_f$ controls the spatial extent of free-space evidence, and $\sigma_t^2$ controls temporal decay.
 
-The resulting occupancy estimate is
+The expected occupancy probability is
 
 ```math
 \mathbb{E}[p(\mathbf{x},t)]
 =
 \frac{\alpha(\mathbf{x},t)}
-{\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)},
+{\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)}.
 ```
 
-with evidence concentration
+The occupancy variance is
+
+```math
+\mathrm{Var}[p(\mathbf{x},t)]
+=
+\frac{
+\alpha(\mathbf{x},t)\beta(\mathbf{x},t)
+}{
+\left(\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)\right)^2
+\left(\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)+1\right)
+}.
+```
+
+The evidence concentration is
 
 ```math
 \lambda(\mathbf{x},t)
@@ -99,7 +112,26 @@ with evidence concentration
 \alpha(\mathbf{x},t)+\beta(\mathbf{x},t).
 ```
 
-The concentration captures how much evidence supports the estimate, allowing locations with the same expected occupancy to retain different levels of evidential certainty.
+Spatial support is defined by proximity to at least one returned observation:
+
+```math
+s(\mathbf{x},t)
+=
+\bigvee_{i \in \mathcal{R}}
+\left[
+(\mathbf{x}-\mathbf{e}_i)^\mathsf{T}
+\Sigma_s^{-1}
+(\mathbf{x}-\mathbf{e}_i)
+\leq
+\sigma_s^2
+\right].
+```
+
+The mean describes estimated occupancy, the variance describes uncertainty in
+that probability, the concentration describes the amount of accumulated
+evidence, and the support flag indicates whether the location is supported by
+returned observations.
+
 
 ## Features
 
