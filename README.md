@@ -8,10 +8,10 @@ Beta Evidence Fields (BEFs) represents occupancy as a continuous Beta distributi
 
 ## Mathematical Definition
 
-Define an unnormalised Gaussian kernel with covariance $\Sigma$:
+Define a peak-normalised Gaussian kernel with covariance $\Sigma$:
 
 ```math
-k_{\Sigma}(\mathbf{x},\boldsymbol{\mu})
+K_{\Sigma}(\mathbf{x},\boldsymbol{\mu})
 =
 \exp\left(
 -\frac{1}{2}
@@ -21,13 +21,84 @@ k_{\Sigma}(\mathbf{x},\boldsymbol{\mu})
 \right).
 ```
 
-Each range observation consists of an origin $\mathbf{o}_i$, unit direction $\mathbf{d}_i$, range $\rho_i$, acquisition time $t_i$, and evidence weight $w_i$. Its endpoint is
+Each range observation has endpoint
 
 ```math
 \mathbf{e}_i = \mathbf{o}_i + \rho_i\mathbf{d}_i.
 ```
 
-At position $\mathbf{x}$ and time $t$, the field is represented by
+Where:
+
+- $\mathbf{o}_i$: observation origin
+- $\mathbf{d}_i$: unit direction
+- $\rho_i$: range
+- $t_i$: acquisition time
+- $w_i$: evidence weight
+
+At query points $\mathbf{x}_1,\ldots,\mathbf{x}_M$ and time $t$, define the temporal weight vector
+
+```math
+\mathbf{W}(t)
+=
+\begin{bmatrix}
+w_1 K_{\sigma_t^2}(t,t_1)\\
+\vdots\\
+w_N K_{\sigma_t^2}(t,t_N)
+\end{bmatrix}.
+```
+
+The occupied-evidence matrix is
+
+```math
+[\mathbf{K}_s]_{ij}
+=
+r_i K_{\Sigma_s}(\mathbf{x}_j,\mathbf{e}_i),
+```
+
+where $r_i\in\{0,1\}$ indicates whether observation $i$ produced a range return.
+
+The free-space evidence matrix is
+
+```math
+[\mathbf{K}_f]_{ij}
+=
+\sqrt{
+\frac{
+\mathbf{d}_i^\mathsf{T}\Sigma_f^{-1}\mathbf{d}_i
+}{
+2\pi
+}
+}
+\int_0^{\rho_i}
+K_{\Sigma_f}
+\left(
+\mathbf{x}_j,
+\mathbf{o}_i+s\mathbf{d}_i
+\right)
+\,ds.
+```
+
+The Beta field parameters at all query points are then
+
+```math
+\begin{aligned}
+\boldsymbol{\alpha}(t)
+&=
+\boldsymbol{\alpha}_0
++
+\mathbf{W}(t)^\mathsf{T}\mathbf{K}_s,
+\\[4pt]
+\boldsymbol{\beta}(t)
+&=
+\boldsymbol{\beta}_0
++
+\mathbf{W}(t)^\mathsf{T}\mathbf{K}_f.
+\end{aligned}
+```
+
+Here, $\Sigma_s$ controls the spatial extent of occupied evidence, $\Sigma_f$ controls the spatial extent of free-space evidence, and $\sigma_t^2$ controls temporal decay. The matrices $\mathbf{K}_s,\mathbf{K}_f\in\mathbb{R}^{N\times M}$ contain the spatial evidence from each observation at each query point.
+
+At each query point $\mathbf{x}$, the occupancy probability is represented by
 
 ```math
 p(\mathbf{x},t)
@@ -38,49 +109,6 @@ p(\mathbf{x},t)
 \beta(\mathbf{x},t)
 \right).
 ```
-
-Occupied evidence is accumulated around returned endpoints:
-
-```math
-\alpha(\mathbf{x},t)
-=
-\alpha_0(\mathbf{x})
-+
-\sum_{i \in \mathcal{R}}
-w_i
-k_{\sigma_t^2}(t,t_i)
-k_{\Sigma_s}(\mathbf{x},\mathbf{e}_i),
-```
-
-where $\mathcal{R}$ is the set of observations that produced a range return.
-
-Free-space evidence is accumulated continuously along every observation ray:
-
-```math
-\beta(\mathbf{x},t)
-=
-\beta_0(\mathbf{x})
-+
-\sum_i
-w_i
-k_{\sigma_t^2}(t,t_i)
-\sqrt{
-\frac{
-\mathbf{d}_i^\mathsf{T}\Sigma_f^{-1}\mathbf{d}_i
-}{
-2\pi
-}
-}
-\int_0^{\rho_i}
-k_{\Sigma_f}
-\left(
-\mathbf{x},
-\mathbf{o}_i+s\mathbf{d}_i
-\right)
-\,ds.
-```
-
-Here, $\Sigma_s$ controls the spatial extent of occupied evidence, $\Sigma_f$ controls the spatial extent of free-space evidence, and $\sigma_t^2$ controls temporal decay.
 
 The expected occupancy probability is
 
@@ -117,7 +145,7 @@ Spatial support is defined by proximity to at least one returned observation:
 ```math
 s(\mathbf{x},t)
 =
-\bigvee_{i \in \mathcal{R}}
+\bigvee_{i:r_i=1}
 \left[
 (\mathbf{x}-\mathbf{e}_i)^\mathsf{T}
 \Sigma_s^{-1}
@@ -127,35 +155,58 @@ s(\mathbf{x},t)
 \right].
 ```
 
-The mean describes estimated occupancy, the variance describes uncertainty in
-that probability, the concentration describes the amount of accumulated
-evidence, and the support flag indicates whether the location is supported by
-returned observations.
-
+The mean describes estimated occupancy, the variance describes uncertainty in that probability, the concentration describes the amount of accumulated evidence, and the support flag indicates whether the location is supported by returned observations.
 
 ## Features
 
-- Dimension-agnostic spatial representation
-- Continuous Beta occupancy field
-- Gaussian occupied evidence around returned endpoints
-- Analytically integrated free-space evidence along finite sensor rays
-- Temporal Gaussian evidence decay
-- Configurable spatial and temporal support
-- Weighted observations
-- Scalar and vectorised field queries
-- Occupancy mean, variance, concentration, and support
+- Dimension-agnostic continuous Beta occupancy fields
+- Gaussian occupied and integrated free-space evidence
+- Weighted spatial and temporal evidence
+- Vectorised queries for occupancy, variance, concentration, and support
 
 ## Installation
 
 Python 3.10 or later is required.
 
-Using Pixi:
+### pip
+
+Install the latest version directly from GitHub:
 
 ```bash
+pip install git+https://github.com/Jampar/beta-evidence-fields.git
+```
+
+Alternatively, clone the repository and install it locally:
+
+```bash
+git clone https://github.com/Jampar/beta-evidence-fields.git
+cd beta-evidence-fields
+pip install .
+```
+
+For an editable development installation:
+
+```bash
+pip install -e .
+```
+
+### Pixi
+
+Pixi provides the reproducible development and testing environment used by the project.
+
+Clone the repository and install the environment:
+
+```bash
+git clone https://github.com/Jampar/beta-evidence-fields.git
+cd beta-evidence-fields
 pixi install
 ```
 
-The package is configured as an editable dependency in the Pixi environment.
+Run the unit tests with:
+
+```bash
+pixi run test
+```
 
 ## Basic Usage
 
