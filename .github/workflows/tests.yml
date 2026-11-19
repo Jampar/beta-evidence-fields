@@ -20,3 +20,6 @@ jobs:
 
       - name: Gaussian Kernel
         run: pixi run pytest tests/test_gaussian.py
+
+      - name: Occupancy Query
+        run: pixi run pytest tests/test_query.py
