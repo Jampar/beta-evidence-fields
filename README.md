@@ -208,6 +208,7 @@ observation = OccupancyObservation(origin    = np.array([0.0, 0.0]),
                                    time      = 0.0)
 
 field.add([observation])
+
 query = field.query(points = np.array([2.0, 0.0]), time   = 0.0)
 
 print(query.alpha)
