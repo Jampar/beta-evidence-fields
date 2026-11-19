@@ -23,3 +23,6 @@ jobs:
 
       - name: Occupancy Query
         run: pixi run pytest tests/test_query.py
+
+      - name: Occupancy Prior
+        run: pixi run pytest tests/test_prior.py
