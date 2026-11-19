@@ -6,23 +6,21 @@ Beta-Evidence-Fields represents occupancy as a continuous spatial Beta distribut
 
 ## Mathematical Definition
 
-At a spatial location \(\mathbf{x}\) and time \(t\), occupancy probability is represented by a Beta distribution
+At a spatial location $\mathbf{x}$ and time $t$, occupancy is represented by a Beta distribution:
 
-\[
+$$
 p(\mathbf{x},t)
 \sim
 \operatorname{Beta}
 \left(
 \alpha(\mathbf{x},t),
 \beta(\mathbf{x},t)
-\right),
-\]
+\right).
+$$
 
-where \(\alpha(\mathbf{x},t)\) represents occupied evidence and \(\beta(\mathbf{x},t)\) represents free-space evidence.
+The field parameters are constructed from the prior and accumulated range-sensor evidence:
 
-For a set of range observations \(i=1,\ldots,N\), the field is
-
-\[
+$$
 \alpha(\mathbf{x},t)
 =
 \alpha_0(\mathbf{x})
@@ -31,9 +29,9 @@ For a set of range observations \(i=1,\ldots,N\), the field is
 r_i w_i
 k_t(t,t_i)
 k_s(\mathbf{x},\mathbf{e}_i),
-\]
+$$
 
-\[
+$$
 \beta(\mathbf{x},t)
 =
 \beta_0(\mathbf{x})
@@ -41,8 +39,15 @@ k_s(\mathbf{x},\mathbf{e}_i),
 \sum_{i=1}^{N}
 w_i
 k_t(t,t_i)
-\sqrt{\frac{\mathbf{d}_i^\mathsf{T}
-\Sigma_f^{-1}\mathbf{d}_i}{2\pi}}
+\sqrt{
+\frac{
+\mathbf{d}_i^\mathsf{T}
+\Sigma_f^{-1}
+\mathbf{d}_i
+}{
+2\pi
+}
+}
 \int_0^{\rho_i}
 k_f
 \left(
@@ -50,21 +55,25 @@ k_f
 \mathbf{o}_i+s\mathbf{d}_i
 \right)
 \,ds.
-\]
+$$
 
-Each observation is defined by
+Each observation is defined by:
 
-- \(\mathbf{o}_i\): sensor origin,
-- \(\mathbf{d}_i\): unit ray direction,
-- \(\rho_i\): measured ray range,
-- \(\mathbf{e}_i=\mathbf{o}_i+\rho_i\mathbf{d}_i\): ray endpoint,
-- \(r_i\in\{0,1\}\): whether the ray produced a return,
-- \(t_i\): observation time,
-- \(w_i\): evidence weight.
+- $\mathbf{o}_i$: sensor origin
+- $\mathbf{d}_i$: unit ray direction
+- $\rho_i$: ray range
+- $\mathbf{e}_i=\mathbf{o}_i+\rho_i\mathbf{d}_i$: ray endpoint
+- $r_i\in\{0,1\}$: whether the observation produced a return
+- $t_i$: observation time
+- $w_i$: evidence weight
 
-The spatial Gaussian kernel is
+Only returned observations contribute occupied evidence to $\alpha$. Every retained observation contributes free-space evidence to $\beta$ along its finite ray.
 
-\[
+### Spatial Evidence
+
+The unnormalised spatial Gaussian kernel is
+
+$$
 k(\mathbf{x},\boldsymbol{\mu})
 =
 \exp
@@ -74,39 +83,42 @@ k(\mathbf{x},\boldsymbol{\mu})
 \Sigma^{-1}
 (\mathbf{x}-\boldsymbol{\mu})
 \right).
-\]
+$$
 
-Separate covariance matrices \(\Sigma_s\) and \(\Sigma_f\) define the occupied surface and free-space kernels respectively.
+Separate covariance matrices $\Sigma_s$ and $\Sigma_f$ define the occupied-surface and free-space kernels respectively. Free-space evidence is evaluated using the analytic integral of the Gaussian kernel along each finite observation ray.
 
-Temporal evidence is weighted using the one-dimensional Gaussian kernel
+### Temporal Evidence
 
-\[
+Evidence is temporally weighted using
+
+$$
 k_t(t,t_i)
 =
 \exp
 \left(
 -\frac{(t-t_i)^2}{2\sigma_t^2}
 \right),
-\]
+$$
 
-where \(\sigma_t^2\) is the configured temporal variance.
-
-Only returned observations contribute to \(\alpha\), whereas every retained observation contributes free-space evidence to \(\beta\) along its ray.
+where $\sigma_t^2$ is the configured temporal variance.
 
 ### Occupancy Statistics
 
 The expected occupancy probability is
 
-\[
+$$
 \mathbb{E}[p(\mathbf{x},t)]
 =
-\frac{\alpha(\mathbf{x},t)}
-{\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)}.
-\]
+\frac{
+\alpha(\mathbf{x},t)
+}{
+\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)
+}.
+$$
 
-The Beta variance is
+The occupancy variance is
 
-\[
+$$
 \operatorname{Var}[p(\mathbf{x},t)]
 =
 \frac{
@@ -115,45 +127,45 @@ The Beta variance is
 \left(\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)\right)^2
 \left(\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)+1\right)
 }.
-\]
+$$
 
-The total evidence concentration is
+The evidence concentration is
 
-\[
+$$
 \lambda(\mathbf{x},t)
 =
 \alpha(\mathbf{x},t)+\beta(\mathbf{x},t).
-\]
+$$
 
-Consequently, locations with the same mean occupancy may retain different levels of evidential certainty.
+This separates the estimated occupancy probability from the amount of evidence supporting that estimate.
 
 ### Support
 
-A query is considered spatially supported when it lies within `support_sigma` Mahalanobis standard deviations of at least one returned observation endpoint:
+A location is spatially supported when it lies within the configured Mahalanobis distance of at least one returned observation endpoint:
 
-\[
+$$
 (\mathbf{x}-\mathbf{e}_i)^\mathsf{T}
 \Sigma_s^{-1}
 (\mathbf{x}-\mathbf{e}_i)
 \leq
 \sigma_{\mathrm{support}}^2.
-\]
+$$
 
 Observations are retained temporally while
 
-\[
+$$
 \frac{(t-t_i)^2}{\sigma_t^2}
 \leq
 \sigma_{\mathrm{temporal}}^2.
-\]
+$$
 
-The support flag is therefore distinct from occupancy probability: it indicates whether a location is spatially supported by returned range evidence.
+Support is distinct from occupancy probability and evidence concentration. It indicates whether a location is spatially supported by returned range evidence.
 
 ## Features
 
 - Dimension-agnostic spatial representation
 - Continuous Beta occupancy field
-- Gaussian occupied evidence around range returns
+- Gaussian occupied evidence around returned endpoints
 - Analytically integrated free-space evidence along finite sensor rays
 - Temporal Gaussian evidence decay
 - Configurable spatial and temporal support
@@ -167,7 +179,11 @@ Python 3.10 or later is required.
 
 Using Pixi:
 
-`pixi install`
+```bash
+pixi install
+```
+
+The package is configured as an editable dependency in the Pixi environment.
 
 ## Basic Usage
 
@@ -227,8 +243,11 @@ query = field.query(points)
 
 ## Testing
 
-The unit tests run in the project's Pixi environment:
+Install the locked Pixi environment and run the unit tests with:
 
-`pixi run test`
+```bash
+pixi install
+pixi run test
+```
 
 The test suite covers Gaussian kernels, occupancy observations, priors, query statistics, and occupancy-field behaviour.
