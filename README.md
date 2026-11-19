@@ -11,7 +11,7 @@ At spatial location $\mathbf{x}$ and time $t$, the occupancy probability is repr
 ```math
 p(\mathbf{x},t)
 \sim
-\operatorname{Beta}
+\mathrm{Beta}
 \left(
 \alpha(\mathbf{x},t),
 \beta(\mathbf{x},t)
@@ -119,7 +119,7 @@ The expected occupancy probability is
 The occupancy variance is
 
 ```math
-\operatorname{Var}[p(\mathbf{x},t)]
+\mathrm{Var}[p(\mathbf{x},t)]
 =
 \frac{
 \alpha(\mathbf{x},t)\beta(\mathbf{x},t)
