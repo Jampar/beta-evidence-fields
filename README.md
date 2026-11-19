@@ -11,7 +11,7 @@ At a spatial location $\mathbf{x}$ and time $t$, occupancy is represented by a B
 $$
 p(\mathbf{x},t)
 \sim
-\operatorname{Beta}
+\mathrm{Beta}
 \left(
 \alpha(\mathbf{x},t),
 \beta(\mathbf{x},t)
