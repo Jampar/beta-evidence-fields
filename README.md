@@ -8,7 +8,7 @@ Beta Evidence Fields (BEFs) represents occupancy as a continuous Beta distributi
 
 ## Mathematical Definition
 
-Define a peak-normalised Gaussian kernel with covariance $\Sigma$:
+Define the peak-normalised Gaussian kernel with covariance $\Sigma$:
 
 ```math
 K_{\Sigma}(\mathbf{x},\boldsymbol{\mu})
@@ -24,7 +24,11 @@ K_{\Sigma}(\mathbf{x},\boldsymbol{\mu})
 Each range observation has endpoint
 
 ```math
-\mathbf{e}_i = \mathbf{o}_i + \rho_i\mathbf{d}_i.
+\mathbf{e}_i
+=
+\mathbf{o}_i
++
+\rho_i\mathbf{d}_i.
 ```
 
 Where:
@@ -34,8 +38,9 @@ Where:
 - $\rho_i$: range
 - $t_i$: acquisition time
 - $w_i$: evidence weight
+- $r_i\in\{0,1\}$: return indicator
 
-At query points $\mathbf{x}_1,\ldots,\mathbf{x}_M$ and time $t$, define the temporal weight vector
+For query points $\mathbf{x}_1,\ldots,\mathbf{x}_M$ at time $t$, define the temporally weighted evidence vector
 
 ```math
 \mathbf{W}(t)
@@ -47,20 +52,21 @@ w_N K_{\sigma_t^2}(t,t_N)
 \end{bmatrix}.
 ```
 
-The occupied-evidence matrix is
+The occupied-evidence matrix is defined by
 
 ```math
 [\mathbf{K}_s]_{ij}
 =
-r_i K_{\Sigma_s}(\mathbf{x}_j,\mathbf{e}_i),
+r_i
+K_{\Sigma_s}(\mathbf{x}_j,\mathbf{e}_i).
 ```
 
-where $r_i\in\{0,1\}$ indicates whether observation $i$ produced a range return.
+Only observations that produce a range return therefore contribute occupied evidence.
 
-The free-space evidence matrix is
+Define the normalised finite-ray free-space kernel
 
 ```math
-[\mathbf{K}_f]_{ij}
+L_i(\mathbf{x})
 =
 \sqrt{
 \frac{
@@ -72,13 +78,40 @@ The free-space evidence matrix is
 \int_0^{\rho_i}
 K_{\Sigma_f}
 \left(
-\mathbf{x}_j,
+\mathbf{x},
 \mathbf{o}_i+s\mathbf{d}_i
 \right)
 \,ds.
 ```
 
-The Beta field parameters at all query points are then
+The free-space evidence matrix is then
+
+```math
+[\mathbf{K}_f]_{ij}
+=
+L_i(\mathbf{x}_j)
+\left[
+1-r_iK_{\Sigma_s}(\mathbf{x}_j,\mathbf{e}_i)
+\right].
+```
+
+For a non-returned observation, $r_i=0$, so the complete finite ray contributes free-space evidence. For a returned observation, $r_i=1$, and free-space evidence is smoothly suppressed around the returned surface.
+
+At the returned endpoint,
+
+```math
+K_{\Sigma_s}(\mathbf{e}_i,\mathbf{e}_i)=1,
+```
+
+so the corresponding free-space contribution is zero:
+
+```math
+[\mathbf{K}_f]_{ij}=0
+\qquad\text{when}\qquad
+\mathbf{x}_j=\mathbf{e}_i,\;r_i=1.
+```
+
+The Beta field parameters across all query points are
 
 ```math
 \begin{aligned}
@@ -96,9 +129,9 @@ The Beta field parameters at all query points are then
 \end{aligned}
 ```
 
-Here, $\Sigma_s$ controls the spatial extent of occupied evidence, $\Sigma_f$ controls the spatial extent of free-space evidence, and $\sigma_t^2$ controls temporal decay. The matrices $\mathbf{K}_s,\mathbf{K}_f\in\mathbb{R}^{N\times M}$ contain the spatial evidence from each observation at each query point.
+Here, $\Sigma_s$ controls the spatial extent of occupied evidence, $\Sigma_f$ controls the spatial extent of free-space evidence, and $\sigma_t^2$ controls temporal evidence decay. The matrices $\mathbf{K}_s,\mathbf{K}_f\in\mathbb{R}^{N\times M}$ contain the occupied and free-space evidence contributed by each observation at each query point.
 
-At each query point $\mathbf{x}$, the occupancy probability is represented by
+At each query point $\mathbf{x}$, occupancy probability is represented by
 
 ```math
 p(\mathbf{x},t)
@@ -115,8 +148,11 @@ The expected occupancy probability is
 ```math
 \mathbb{E}[p(\mathbf{x},t)]
 =
-\frac{\alpha(\mathbf{x},t)}
-{\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)}.
+\frac{
+\alpha(\mathbf{x},t)
+}{
+\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)
+}.
 ```
 
 The occupancy variance is
@@ -155,7 +191,8 @@ s(\mathbf{x},t)
 \right].
 ```
 
-The mean describes estimated occupancy, the variance describes uncertainty in that probability, the concentration describes the amount of accumulated evidence, and the support flag indicates whether the location is supported by returned observations.
+The mean describes estimated occupancy, variance describes uncertainty in the estimated occupancy probability, concentration describes accumulated evidence strength, and support indicates whether the location lies within the configured spatial support of returned observations.
+
 
 ## Features
 
