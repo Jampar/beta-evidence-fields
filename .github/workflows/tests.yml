@@ -26,3 +26,6 @@ jobs:
 
       - name: Occupancy Prior
         run: pixi run pytest tests/test_prior.py
+
+      - name: Occupancy Observation
+        run: pixi run pytest tests/test_observation.py
