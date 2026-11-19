@@ -1,10 +1,10 @@
-# Beta Evidence Fields
+# Beta Evidence Fields 
 
 [![Beta Field Unit Tests](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml/badge.svg)](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml)
 
-A dimension-agnostic Python library for continuous probabilistic occupancy fields from range-sensor evidence.
+A Python library for continuous probabilistic occupancy fields from range-sensor evidence.
 
-Beta-Evidence-Fields represents occupancy as a continuous Beta distribution constructed directly from range observations. Returned measurements contribute occupied evidence around their endpoints, while observation rays contribute free-space evidence along their length. Gaussian spatial kernels provide a continuous representation, and temporal Gaussian weighting allows evidence to decay as observations age.
+Beta Evidence Fields (BEFs) represents occupancy as a continuous Beta distribution constructed directly from range observations. Returned measurements contribute occupied evidence around their endpoints, while observation rays contribute free-space evidence along their length. Gaussian spatial kernels provide a continuous representation, and temporal Gaussian weighting allows evidence to decay as observations age.
 
 ## Mathematical Definition
 
