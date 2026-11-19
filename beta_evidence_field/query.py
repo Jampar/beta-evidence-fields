@@ -40,5 +40,4 @@ class OccupancyQuery:
 
         concentration = self.concentration
 
-        return (self.alpha*self.beta
-                / (concentration**2*(concentration + 1.0)))
+        return ((self.alpha*self.beta) / (concentration**2*(concentration + 1.0)))
