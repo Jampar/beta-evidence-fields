@@ -507,6 +507,13 @@ print(query.variance)
 print(query.concentration)
 print(query.support)
 ```
+The field can then be constructed directly from the configuration:
+
+```python
+from beta_evidence_field import OccupancyField
+
+field = OccupancyField.from_yaml("../config/example_2d_config.yaml")
+```
 
 Multiple locations can be evaluated simultaneously:
 
