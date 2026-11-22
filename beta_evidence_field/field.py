@@ -1,4 +1,5 @@
 import numpy as np
+import yaml
 
 from .kernels import GaussianKernel
 from .observation import OccupancyObservation
@@ -14,11 +15,38 @@ class OccupancyField:
     """Continuous Beta occupancy field constructed from range observations."""
 
 
+    @classmethod
+    def from_yaml(cls,
+                  path : str) -> "OccupancyField":
+        """Constructs an occupancy field from a YAML configuration."""
+
+        with open(path, "r", encoding = "utf-8") as file:
+            config = yaml.safe_load(file)
+
+        surface  = config["surface"]
+        free     = config["free"]
+        temporal = config["temporal"]
+        prior    = config["prior"]
+        support  = config.get("support", {})
+
+        return cls(surface_covariance     = np.asarray(surface["covariance"], dtype = float),
+                   free_covariance        = np.asarray(free["covariance"],    dtype = float),
+                   temporal_variance      = float(temporal["variance"]),
+                   prior                  = OccupancyPrior(alpha = float(prior["alpha"]),
+                                                           beta  = float(prior["beta"])),
+                   surface_evidence       = float(surface.get("evidence_strength", 1.0)),
+                   free_evidence          = float(free.get("evidence_strength", 1.0)),
+                   support_sigma          = float(support.get("sigma", DEFAULT_SUPPORT_SIGMA)),
+                   temporal_support_sigma = float(temporal.get("support_sigma", DEFAULT_TEMPORAL_SUPPORT_SIGMA)))
+
+
     def __init__(self,
                  surface_covariance     : np.ndarray,
                  free_covariance        : np.ndarray,
                  temporal_variance      : float,
                  prior                  : OccupancyPrior,
+                 surface_evidence       : float = 1.0,
+                 free_evidence          : float = 1.0,
                  support_sigma          : float = DEFAULT_SUPPORT_SIGMA,
                  temporal_support_sigma : float = DEFAULT_TEMPORAL_SUPPORT_SIGMA):
 
@@ -43,6 +71,12 @@ class OccupancyField:
         if not np.isfinite(temporal_variance) or temporal_variance <= 0.0:
             raise ValueError("temporal_variance must be finite and positive")
 
+        if not np.isfinite(surface_evidence) or surface_evidence <= 0.0:
+            raise ValueError("surface_evidence must be finite and positive")
+
+        if not np.isfinite(free_evidence) or free_evidence <= 0.0:
+            raise ValueError("free_evidence must be finite and positive")
+
         if not np.isfinite(support_sigma) or support_sigma <= 0.0:
             raise ValueError("support_sigma must be finite and positive")
 
@@ -56,6 +90,8 @@ class OccupancyField:
         self.temporal_kernel        = GaussianKernel(covariance = np.array([[temporal_variance]]))
 
         self.prior                  = prior
+        self.surface_evidence       = float(surface_evidence)
+        self.free_evidence          = float(free_evidence)
         self.support_sigma          = float(support_sigma)
         self.temporal_support_sigma = float(temporal_support_sigma)
 
@@ -169,9 +205,8 @@ class OccupancyField:
 
             free_evidence[returned] *= 1.0 - surface_evidence[returned]
 
-            alpha += np.sum(weights[returned, None]
-                            * surface_evidence[returned],
-                            axis = 0)
+            alpha +=  self.surface_evidence * np.sum(weights[returned, None] * 
+                                                     surface_evidence[returned], axis = 0)
 
             surface_distance = self.surface_kernel.distance(points = points[None, :, :],
                                                             centre = endpoints[:, None, :])
@@ -180,7 +215,7 @@ class OccupancyField:
                             & (surface_distance <= self.support_sigma**2),
                             axis = 0)
 
-        beta += np.sum(weights[:, None] * free_evidence, axis = 0)
+        beta += self.free_evidence * np.sum(weights[:, None] * free_evidence, axis = 0)
 
         if scalar:
             return OccupancyQuery(alpha   = float(alpha[0]),
