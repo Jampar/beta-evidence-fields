@@ -64,7 +64,7 @@ class OccupancyObservation:
     def state(self) -> np.ndarray:
         """Returns the lifted spatiotemporal observation state."""
 
-        return np.concatenate((self.origin,
+        return np.concatenate((self.endpoint,
                                self.direction,
                                np.array([self.time])))
 
