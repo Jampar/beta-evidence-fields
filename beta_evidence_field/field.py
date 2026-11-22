@@ -302,11 +302,10 @@ class OccupancyField:
         if not self.observations:
                 return np.ones(len(observations), dtype = float)
 
-        time = observations[0].time
-
+        time     = observations[0].time
         previous = [observation
                     for observation in self.observations
-                    if not np.isclose(observation.time, time)]
+                    if observation.time < time]
 
         if not previous:
                 return np.ones(len(observations), dtype = float)
