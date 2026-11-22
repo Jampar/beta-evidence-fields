@@ -10,7 +10,7 @@ def make_field():
 
     return OccupancyField(surface_covariance = np.eye(2),
                           free_covariance    = np.eye(2),
-                          temporal_variance  = 1.0,
+                          state_variance  = 1.0,
                           prior              = OccupancyPrior(alpha = 5.0, beta = 5.0))
 
 

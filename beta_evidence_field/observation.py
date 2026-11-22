@@ -41,6 +41,7 @@ class OccupancyObservation:
         self.returned        = bool(self.returned)
         self.time            = float(self.time)
         self.evidence_weight = float(self.evidence_weight)
+        self.novelty         = 1.0
 
         if self.origin.ndim != 1:
             raise ValueError("origin must be one-dimensional")
@@ -59,6 +60,21 @@ class OccupancyObservation:
         self.direction = self.direction/direction_norm
 
 
+    @property
+    def state(self) -> np.ndarray:
+        """Returns the lifted spatiotemporal observation state."""
+
+        return np.concatenate((self.origin,
+                               self.direction,
+                               np.array([self.time])))
+
+    @property
+    def weight(self) -> float:
+        """Returns the effective evidence weight."""
+
+        return self.evidence_weight * self.novelty
+
+    
     @property
     def endpoint(self) -> np.ndarray:
         """Returns the endpoint of the observation ray."""
