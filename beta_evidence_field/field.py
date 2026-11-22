@@ -300,13 +300,21 @@ class OccupancyField:
                  observations : list[OccupancyObservation]) -> np.ndarray:
 
         if not self.observations:
-            return np.ones(len(observations), dtype = float)
+                return np.ones(len(observations), dtype = float)
 
-        states          = np.asarray([observation.state for observation in observations],       dtype = float)
-        previous_states = np.asarray([observation.state for observation in self.observations],  dtype = float)
+        time = observations[0].time
 
-        distance = self.state_kernel.distance(points = states[:, None, :],
-                                              centre = previous_states[None, :, :])
+        previous = [observation
+                    for observation in self.observations
+                    if not np.isclose(observation.time, time)]
+
+        if not previous:
+                return np.ones(len(observations), dtype = float)
+
+        states          = np.asarray([observation.state for observation in observations], dtype = float)
+        previous_states = np.asarray([observation.state for observation in previous], dtype = float)
+        distance        = self.state_kernel.distance(points = states[:, None, :], 
+                                                     centre = previous_states[None, :, :])
 
         return 1.0 - np.exp(-0.5 * np.min(distance, axis = 1))
 
