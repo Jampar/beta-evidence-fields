@@ -180,18 +180,63 @@ class OccupancyField:
 
         return observations
 
+    
+    def evidence(self,
+                 observations : list[OccupancyObservation],
+                 points       : np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluates occupied and free evidence from the supplied observations."""
+
+        origins    = np.asarray([o.origin    for o in observations], dtype = float)
+        directions = np.asarray([o.direction for o in observations], dtype = float)
+        endpoints  = np.asarray([o.endpoint  for o in observations], dtype = float)
+        returned   = np.asarray([o.returned  for o in observations], dtype = bool)
+        weights    = np.asarray([o.weight    for o in observations], dtype = float)
+
+        surface_evidence = self.surface_kernel.evaluate(points = points[None, :, :],
+                                                        centre = endpoints[:, None, :])
+
+        surface_evidence *= returned[:, None]
+
+        free_evidence = self.free_kernel.convolve_line(points = points[None, :, :],
+                                                       start  = origins[:, None, :],
+                                                       end    = endpoints[:, None, :])
+
+        precision = np.einsum("ri,ij,rj->r",
+                              directions,
+                              self.free_kernel.precision,
+                              directions,
+                              optimize = True)
+
+        free_evidence *= np.sqrt(precision/(2.0*np.pi))[:, None]
+        free_evidence *= 1.0 - surface_evidence
+
+        alpha = self.surface_evidence_strength * np.sum(weights[:, None] * surface_evidence, axis = 0)
+        beta = self.free_evidence_strength * np.sum(weights[:, None] * free_evidence, axis = 0)
+
+        if np.any(returned):
+            surface_distance = self.surface_kernel.distance(points = points[None, :, :],
+                                                            centre = endpoints[:, None, :])
+
+            support = np.any(returned[:, None] & 
+                            (surface_distance <= self.support_sigma**2), axis = 0)
+
+        else:
+            support = np.zeros(len(points), dtype = bool)
+
+        return alpha, beta, support
+
 
     def query(self,
               points : np.ndarray,
               time   : float | None = None) -> OccupancyQuery:
         """Queries the occupancy field at one or more locations."""
 
-        points, scalar  = self._prepare(points)
+        points, scalar = self._prepare(points)
 
-        alpha, beta     = self.prior.evaluate(points)
-        alpha           = np.asarray(alpha, dtype = float)
-        beta            = np.asarray(beta,  dtype = float)
-        support         = np.zeros(len(points), dtype = bool)
+        alpha, beta = self.prior.evaluate(points)
+
+        alpha = np.asarray(alpha, dtype = float)
+        beta  = np.asarray(beta,  dtype = float)
 
         require(alpha.shape == (len(points),),
                 ValueError,
@@ -201,70 +246,26 @@ class OccupancyField:
                 ValueError,
                 "prior beta must have shape (n,)")
 
-        if not self.observations:
-            if scalar:
-                return OccupancyQuery(alpha   = float(alpha[0]),
-                                      beta    = float(beta[0]),
-                                      support = False)
+        support = np.zeros(len(points), dtype = bool)
 
-            return OccupancyQuery(alpha   = alpha,
-                                  beta    = beta,
-                                  support = support)
+        if self.observations:
 
-        time = (self.observations[-1].time if time is None else float(time))
+            time = self.observations[-1].time if time is None else float(time)
 
-        require(np.isfinite(time), 
-                ValueError, 
-                "time must be finite")
+            require(np.isfinite(time),
+                    ValueError,
+                    "time must be finite")
 
-        observations = [observation for observation in self.observations
-                        if observation.time <= time]
+            observations = [observation
+                            for observation in self.observations
+                            if observation.time <= time]
 
-        if not observations:
-            if scalar:
-                return OccupancyQuery(alpha   = float(alpha[0]),
-                                      beta    = float(beta[0]),
-                                      support = False)
+            if observations:
+                alpha_evidence, beta_evidence, support = self._evidence(observations = observations,
+                                                                        points       = points)
 
-            return OccupancyQuery(alpha   = alpha,
-                                  beta    = beta,
-                                  support = support)
-
-        origins    = np.asarray([o.origin          for o in observations], dtype = float)
-        directions = np.asarray([o.direction       for o in observations], dtype = float)
-        endpoints  = np.asarray([o.endpoint        for o in observations], dtype = float)
-        returned   = np.asarray([o.returned        for o in observations], dtype = bool)
-        weights    = np.asarray([o.weight          for o in observations], dtype = float)
-
-        surface_evidence  = self.surface_kernel.evaluate(points = points[None, :, :],
-                                                         centre = endpoints[:, None, :])
-
-        surface_evidence *= returned[:, None]
-
-
-        free_evidence     = self.free_kernel.convolve_line(points = points[None, :, :],
-                                                           start  = origins[:, None, :],
-                                                           end    = endpoints[:, None, :])
-
-        precision         = np.einsum("ri,ij,rj->r",
-                                      directions,
-                                      self.free_kernel.precision,
-                                      directions,
-                                      optimize = True)
-
-        free_evidence    *= np.sqrt(precision / (2.0*np.pi))[:, None]
-        free_evidence    *= 1.0 - surface_evidence
-
-        alpha   += self.surface_evidence_strength * np.sum(weights[:, None] * surface_evidence,  axis = 0)
-        beta    += self.free_evidence_strength    * np.sum(weights[:, None] * free_evidence,     axis = 0)
-
-        if np.any(returned):
-
-            surface_distance = self.surface_kernel.distance(points = points[None, :, :],
-                                                            centre = endpoints[:, None, :])
-
-            support          = np.any(returned[:, None] & 
-                                      (surface_distance <= self.support_sigma**2), axis = 0)
+                alpha += alpha_evidence
+                beta  += beta_evidence
 
         if scalar:
             return OccupancyQuery(alpha   = float(alpha[0]),
