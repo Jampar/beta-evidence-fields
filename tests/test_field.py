@@ -1,17 +1,18 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from beta_evidence_field.field import OccupancyField
 from beta_evidence_field.observation import OccupancyObservation
-from beta_evidence_field.prior import OccupancyPrior
+
+
+CONFIG = Path(__file__).parents[1] / "config" / "example_2d_config.yaml"
 
 
 def make_field():
 
-    return OccupancyField(surface_covariance = np.eye(2),
-                          free_covariance    = np.eye(2),
-                          state_variance  = 1.0,
-                          prior              = OccupancyPrior(alpha = 5.0, beta = 5.0))
+    return OccupancyField.from_yaml(CONFIG)
 
 
 def make_observation(time     : float = 0.0,
@@ -30,8 +31,8 @@ def test_empty_field_returns_prior():
 
     query = field.query(np.array([1.0, 0.0]))
 
-    assert query.alpha   == pytest.approx(5.0)
-    assert query.beta    == pytest.approx(5.0)
+    assert query.alpha   == pytest.approx(1.0)
+    assert query.beta    == pytest.approx(1.0)
     assert query.support is False
 
 
