@@ -261,8 +261,8 @@ class OccupancyField:
                             if observation.time <= time]
 
             if observations:
-                alpha_evidence, beta_evidence, support = self._evidence(observations = observations,
-                                                                        points       = points)
+                alpha_evidence, beta_evidence, support = self.evidence(observations = observations,
+                                                                       points       = points)
 
                 alpha += alpha_evidence
                 beta  += beta_evidence
