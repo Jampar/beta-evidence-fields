@@ -16,11 +16,12 @@ def make_field():
 
 
 def make_observation(time     : float = 0.0,
+                     range    : float = 1.0,
                      returned : bool  = True) -> OccupancyObservation:
 
     return OccupancyObservation(origin    = np.array([0.0, 0.0]),
                                 direction = np.array([1.0, 0.0]),
-                                range     = 2.0,
+                                range     = range,
                                 returned  = returned,
                                 time      = time)
 
@@ -110,9 +111,9 @@ def test_vectorised_query_matches_scalar_queries():
     vector = field.query(points)
     scalar = [field.query(point) for point in points]
 
-    np.testing.assert_allclose(vector.alpha,        np.asarray([query.alpha     for query in scalar], dtype = float))
-    np.testing.assert_allclose(vector.beta,         np.asarray([query.beta      for query in scalar], dtype = float))
-    np.testing.assert_array_equal(vector.support,   np.asarray([query.support   for query in scalar], dtype = bool))
+    np.testing.assert_allclose(vector.alpha,      np.asarray([query.alpha   for query in scalar], dtype = float))
+    np.testing.assert_allclose(vector.beta,       np.asarray([query.beta    for query in scalar], dtype = float))
+    np.testing.assert_array_equal(vector.support, np.asarray([query.support for query in scalar], dtype = bool))
 
 
 def test_observations_must_be_chronological():
@@ -162,3 +163,44 @@ def test_future_observations_do_not_affect_past_queries():
     assert query.alpha   == pytest.approx(field.prior.alpha)
     assert query.beta    == pytest.approx(field.prior.beta)
     assert query.support is False
+
+
+def test_identical_observations_share_effective_weight():
+
+    field = make_field()
+
+    observations = [make_observation(),
+                    make_observation()]
+
+    weights = field._redundancy_weights(observations)
+
+    np.testing.assert_allclose(weights,
+                               np.array([0.5, 0.5]))
+
+
+def test_identical_observations_have_unit_total_effective_weight():
+
+    field = make_field()
+
+    observations = [make_observation()
+                    for _ in range(10)]
+
+    weights = field._redundancy_weights(observations)
+
+    assert np.sum(weights) == pytest.approx(1.0)
+
+
+def test_different_ranges_reduce_redundancy():
+
+    field = make_field()
+
+    same = [make_observation(range = 2.0),
+            make_observation(range = 2.0)]
+
+    different = [make_observation(range = 2.0),
+                 make_observation(range = 4.0)]
+
+    same_weights      = field._redundancy_weights(same)
+    different_weights = field._redundancy_weights(different)
+
+    assert np.all(different_weights > same_weights)

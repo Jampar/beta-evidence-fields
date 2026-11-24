@@ -10,7 +10,6 @@ from ._validation   import require
 
 DEFAULT_SUPPORT_SIGMA           = 3.0
 DEFAULT_TEMPORAL_SUPPORT_SIGMA  = 3.0
-DEFAULT_EVIDENCE_STRENGTH       = 1.0
 
 
 class OccupancyField:
@@ -38,8 +37,6 @@ class OccupancyField:
                    prior                        = OccupancyPrior(alpha = float(prior["alpha"]),
                                                                  beta  = float(prior["beta"])),
 
-                   surface_evidence_strength    = float(surface.get("evidence_strength",    DEFAULT_EVIDENCE_STRENGTH)),
-                   free_evidence_strength       = float(free.get("evidence_strength",       DEFAULT_EVIDENCE_STRENGTH)),
                    support_sigma                = float(support.get("sigma",                DEFAULT_SUPPORT_SIGMA)),
                    temporal_support_sigma       = float(state.get("temporal_support_sigma", DEFAULT_TEMPORAL_SUPPORT_SIGMA)))
 
@@ -49,8 +46,6 @@ class OccupancyField:
                  free_covariance            : np.ndarray,
                  state_covariance           : np.ndarray,
                  prior                      : OccupancyPrior,
-                 surface_evidence_strength  : float = DEFAULT_EVIDENCE_STRENGTH,
-                 free_evidence_strength     : float = DEFAULT_EVIDENCE_STRENGTH,
                  support_sigma              : float = DEFAULT_SUPPORT_SIGMA,
                  temporal_support_sigma     : float = DEFAULT_TEMPORAL_SUPPORT_SIGMA):
 
@@ -75,11 +70,7 @@ class OccupancyField:
                 "state_covariance must be a matrix")
 
         dimension       = surface_covariance.shape[0]
-        state_dimension = 2*dimension + 1
 
-        require(state_covariance.shape == (state_dimension, state_dimension),
-                ValueError,
-                f"state_covariance must have shape ({state_dimension}, {state_dimension})")
         
         require(state_covariance[-1, -1] > 0.0,
                 ValueError,
@@ -105,14 +96,6 @@ class OccupancyField:
                 ValueError,
                 "state_covariance must not couple time with origin or direction")
 
-        require(np.isfinite(surface_evidence_strength) and surface_evidence_strength > 0.0,
-                ValueError,
-                "surface_evidence_strength must be finite and positive")
-
-        require(np.isfinite(free_evidence_strength) and free_evidence_strength > 0.0,
-                ValueError,
-                "free_evidence_strength must be finite and positive")
-
         require(np.isfinite(support_sigma) and support_sigma > 0.0,
                 ValueError,
                 "support_sigma must be finite and positive")
@@ -129,8 +112,6 @@ class OccupancyField:
 
         self.prior                      = prior
 
-        self.surface_evidence_strength  = float(surface_evidence_strength)
-        self.free_evidence_strength     = float(free_evidence_strength)
         self.support_sigma              = float(support_sigma)
         self.temporal_support_sigma     = float(temporal_support_sigma )
 
@@ -161,14 +142,18 @@ class OccupancyField:
 
         for observation in observations:
 
-            require(observation.dimension == self.dimension,
-                    ValueError,
-                    f"observation must be {self.dimension}-dimensional")
+                require(observation.dimension == self.dimension,
+                        ValueError,
+                        f"observation must be {self.dimension}-dimensional")
 
-            require(np.isclose(observation.time, time),
-                    ValueError,
-                    "observations added together must have the same time")
-            
+                require(len(observation.state) == self.state_kernel.dimension,
+                        ValueError,
+                        "observation state must match state covariance")
+
+                require(np.isclose(observation.time, time),
+                        ValueError,
+                        "observations added together must have the same time")
+                        
         self._prune(time)
         self.observations.extend(observations)
 
@@ -206,8 +191,8 @@ class OccupancyField:
         free_evidence      *= np.sqrt(precision/(2.0*np.pi))[:, None]
         free_evidence      *= 1.0 - surface_evidence
 
-        alpha               = self.surface_evidence_strength * np.sum(weights[:, None] * surface_evidence, axis = 0)
-        beta                = self.free_evidence_strength * np.sum(weights[:, None] * free_evidence, axis = 0)
+        alpha               = np.sum(weights[:, None] * surface_evidence, axis = 0)
+        beta                = np.sum(weights[:, None] * free_evidence, axis = 0)
 
         if np.any(returned):
             surface_distance = self.surface_kernel.distance(points = points[None, :, :],

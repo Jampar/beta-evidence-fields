@@ -34,7 +34,7 @@ def plot_observation_2d(X           : np.ndarray,
     if surface.shape != X.shape or free.shape != X.shape:
         raise ValueError("surface and free must match the grid shape")
 
-    fig, axis = plt.subplots(figsize = (6, 6), constrained_layout = True)
+    fig, axis = plt.subplots(figsize = (5, 5), constrained_layout = True)
 
     axis.contourf(X, Y, free,    levels = 10, cmap = "Blues", alpha = 0.75)
     axis.contourf(X, Y, surface, levels = 10, cmap = "Reds",  alpha = 0.75)
