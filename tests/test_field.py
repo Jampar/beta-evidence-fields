@@ -56,6 +56,7 @@ def test_clear():
     field.clear()
 
     assert len(field) == 0
+    assert len(field._redundancy) == 0
 
 
 def test_return_increases_occupancy_at_endpoint():
@@ -204,3 +205,143 @@ def test_different_ranges_reduce_redundancy():
     different_weights = field._redundancy_weights(different)
 
     assert np.all(different_weights > same_weights)
+
+
+def test_identical_observations_share_effective_weight():
+
+    field = make_field()
+
+    observations = [make_observation(),
+                    make_observation()]
+
+    weights = field._redundancy_weights(observations)
+
+    np.testing.assert_allclose(weights,
+                               np.array([0.5, 0.5]))
+
+
+def test_identical_observations_have_unit_total_effective_weight():
+
+    field = make_field()
+
+    observations = [make_observation()
+                    for _ in range(10)]
+
+    weights = field._redundancy_weights(observations)
+
+    assert np.sum(weights) == pytest.approx(1.0)
+
+
+def test_different_ranges_reduce_redundancy():
+
+    field = make_field()
+
+    same = [make_observation(range = 2.0),
+            make_observation(range = 2.0)]
+
+    different = [make_observation(range = 2.0),
+                 make_observation(range = 4.0)]
+
+    same_weights      = field._redundancy_weights(same)
+    different_weights = field._redundancy_weights(different)
+
+    assert np.all(different_weights > same_weights)
+
+
+def test_observations_inside_state_support_are_redundant():
+
+    field = make_field()
+
+    sigma_t = np.sqrt(field.temporal_variance)
+
+    observations = [make_observation(time = 0.0),
+                    make_observation(time = sigma_t)]
+
+    weights = field._redundancy_weights(observations)
+
+    expected = 1.0/(1.0 + np.exp(-0.5))
+
+    np.testing.assert_allclose(weights,
+                               np.full(2, expected))
+
+
+def test_observations_outside_state_support_are_not_redundant():
+
+    field = make_field()
+
+    sigma_t = np.sqrt(field.temporal_variance)
+
+    observations = [make_observation(time = 0.0),
+                    make_observation(time = 4.0*sigma_t)]
+
+    weights = field._redundancy_weights(observations)
+
+    np.testing.assert_allclose(weights,
+                               np.ones(2))
+
+
+def test_redundancy_cache_matches_retained_observations():
+
+    field = make_field()
+
+    field.add([make_observation(),
+               make_observation()])
+
+    expected = field._redundancy_weights(field.observations)
+
+    np.testing.assert_allclose(field._redundancy,
+                               expected)
+
+
+def test_redundancy_cache_updates_on_add():
+
+    field = make_field()
+
+    field.add([make_observation()])
+
+    np.testing.assert_allclose(field._redundancy,
+                               np.array([1.0]))
+
+    field.add([make_observation()])
+
+    np.testing.assert_allclose(field._redundancy,
+                               np.array([0.5, 0.5]))
+
+
+def test_historical_query_uses_subset_redundancy():
+
+    field = make_field()
+
+    first  = make_observation(time = 0.0)
+    second = make_observation(time = 1.0)
+
+    field.add([first])
+    field.add([second])
+
+    query = field.query(first.endpoint,
+                        time = 0.0)
+
+    reference = make_field()
+    reference.add([first])
+
+    expected = reference.query(first.endpoint)
+
+    assert query.alpha == pytest.approx(expected.alpha)
+    assert query.beta  == pytest.approx(expected.beta)
+
+
+def test_redundancy_cache_matches_observations_after_pruning():
+
+    field = make_field()
+
+    sigma_t = np.sqrt(field.temporal_variance)
+
+    field.add([make_observation(time = 0.0)])
+    field.add([make_observation(time = 4.0*sigma_t)])
+
+    assert len(field.observations) == 1
+
+    expected = field._redundancy_weights(field.observations)
+
+    np.testing.assert_allclose(field._redundancy,
+                               expected)

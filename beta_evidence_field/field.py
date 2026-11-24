@@ -5,10 +5,11 @@ from .kernels       import GaussianKernel
 from .observation   import OccupancyObservation
 from .prior         import OccupancyPrior
 from .query         import OccupancyQuery
-from ._validation   import require
+from ._validation   import require, require_all
 
 
 DEFAULT_SUPPORT_SIGMA           = 3.0
+DEFAULT_STATE_SUPPORT_SIGMA     = 3.0
 DEFAULT_TEMPORAL_SUPPORT_SIGMA  = 3.0
 
 
@@ -37,6 +38,7 @@ class OccupancyField:
                    prior                        = OccupancyPrior(alpha = float(prior["alpha"]),
                                                                  beta  = float(prior["beta"])),
 
+                   state_support_sigma          = float(state.get("support_sigma",          DEFAULT_STATE_SUPPORT_SIGMA)),
                    support_sigma                = float(support.get("sigma",                DEFAULT_SUPPORT_SIGMA)),
                    temporal_support_sigma       = float(state.get("temporal_support_sigma", DEFAULT_TEMPORAL_SUPPORT_SIGMA)))
 
@@ -47,64 +49,32 @@ class OccupancyField:
                  state_covariance           : np.ndarray,
                  prior                      : OccupancyPrior,
                  support_sigma              : float = DEFAULT_SUPPORT_SIGMA,
+                 state_support_sigma        : float = DEFAULT_STATE_SUPPORT_SIGMA,
                  temporal_support_sigma     : float = DEFAULT_TEMPORAL_SUPPORT_SIGMA):
 
         surface_covariance = np.asarray(surface_covariance, dtype = float)
         free_covariance    = np.asarray(free_covariance,    dtype = float)
         state_covariance   = np.asarray(state_covariance,   dtype = float)
 
-        require(surface_covariance.ndim == 2,                               
-                ValueError, 
-                "surface_covariance must be a matrix")
-        
-        require(surface_covariance.shape[0] == surface_covariance.shape[1], 
-                ValueError, 
-                "surface_covariance must be square")
+        require_all([(surface_covariance.ndim == 2,                                                                ValueError, "surface_covariance must be a matrix"),
+                     (free_covariance.ndim == 2,                                                                   ValueError, "free_covariance must be a matrix"),
+                     (state_covariance.ndim == 2,                                                                  ValueError, "state_covariance must be a matrix")])
 
-        require(free_covariance.shape == surface_covariance.shape,
-                ValueError,
-                "free_covariance must match surface_covariance")
+        require_all([(surface_covariance.shape[0] == surface_covariance.shape[1],                                  ValueError, "surface_covariance must be square"),
+                     (free_covariance.shape == surface_covariance.shape,                                           ValueError, "free_covariance must match surface_covariance"),
+                     (state_covariance.shape[0] == state_covariance.shape[1],                                      ValueError, "state_covariance must be square"),
+                     (state_covariance.shape[0] > 0,                                                               ValueError, "state_covariance must not be empty"),
+                     (np.all(np.isfinite(surface_covariance)),                                                     ValueError, "surface_covariance must be finite"),
+                     (np.all(np.isfinite(free_covariance)),                                                        ValueError, "free_covariance must be finite"),
+                     (np.all(np.isfinite(state_covariance)),                                                       ValueError, "state_covariance must be finite"),
+                     (np.isfinite(support_sigma) and support_sigma > 0.0,                                          ValueError, "support_sigma must be finite and positive"),
+                     (np.isfinite(state_support_sigma) and state_support_sigma > 0.0,                              ValueError, "state_support_sigma must be finite and positive"),
+                     (np.isfinite(temporal_support_sigma) and temporal_support_sigma > 0.0,                        ValueError, "temporal_support_sigma must be finite and positive")])
 
-        require(state_covariance.ndim == 2,
-                ValueError,
-                "state_covariance must be a matrix")
+        require_all([(state_covariance[-1, -1] > 0.0,                                                              ValueError, "state temporal variance must be positive"),
+                     (np.allclose(state_covariance[-1, :-1], 0.0) and np.allclose(state_covariance[:-1, -1], 0.0), ValueError, "state_covariance must not couple time with other state variables")])
 
-        dimension       = surface_covariance.shape[0]
-
-        
-        require(state_covariance[-1, -1] > 0.0,
-                ValueError,
-                "state temporal variance must be positive")
-
-        require(state_covariance.shape[0] == state_covariance.shape[1],
-                ValueError,
-                "state_covariance must be square")
-        
-        require(np.all(np.isfinite(surface_covariance)),
-                ValueError,
-                "surface_covariance must be finite")
-
-        require(np.all(np.isfinite(free_covariance)),
-                ValueError,
-                "free_covariance must be finite")
-
-        require(np.all(np.isfinite(state_covariance)),
-                ValueError,
-                "state_covariance must be finite")
-
-        require(np.allclose(state_covariance[-1, :-1], 0.0) and np.allclose(state_covariance[:-1, -1], 0.0),
-                ValueError,
-                "state_covariance must not couple time with origin or direction")
-
-        require(np.isfinite(support_sigma) and support_sigma > 0.0,
-                ValueError,
-                "support_sigma must be finite and positive")
-
-        require(np.isfinite(temporal_support_sigma ) and temporal_support_sigma  > 0.0,
-                ValueError,
-                "temporal_support_sigma must be finite and positive")
-
-        self.dimension                  = dimension
+        self.dimension                  = surface_covariance.shape[0]
 
         self.surface_kernel             = GaussianKernel(covariance = surface_covariance)
         self.free_kernel                = GaussianKernel(covariance = free_covariance)
@@ -113,12 +83,13 @@ class OccupancyField:
         self.prior                      = prior
 
         self.support_sigma              = float(support_sigma)
-        self.temporal_support_sigma     = float(temporal_support_sigma )
+        self.state_support_sigma        = float(state_support_sigma)
+        self.temporal_support_sigma     = float(temporal_support_sigma)
 
         self.temporal_variance          = float(state_covariance[-1, -1])
 
         self.observations               : list[OccupancyObservation] = []
-
+        self._redundancy                = np.empty(0, dtype = float)
 
 
     def add(self,
@@ -132,30 +103,20 @@ class OccupancyField:
 
         time = observations[0].time
 
-        require(np.isfinite(time),
-                ValueError,
-                "observation time must be finite")
-
-        require(not self.observations or time >= self.observations[-1].time,
-                ValueError,
-                "observations must be added in chronological order")
+        requirements = [(np.isfinite(time),                                           ValueError, "observation time must be finite"),
+                        (not self.observations or time >= self.observations[-1].time, ValueError, "observations must be added in chronological order")]
 
         for observation in observations:
+            requirements += [(observation.dimension == self.dimension,                ValueError, f"observation must be {self.dimension}-dimensional"),
+                             (len(observation.state) == self.state_kernel.dimension,  ValueError, "observation state must match state covariance"),
+                             (np.isclose(observation.time, time),                     ValueError, "observations added together must have the same time")]
 
-                require(observation.dimension == self.dimension,
-                        ValueError,
-                        f"observation must be {self.dimension}-dimensional")
-
-                require(len(observation.state) == self.state_kernel.dimension,
-                        ValueError,
-                        "observation state must match state covariance")
-
-                require(np.isclose(observation.time, time),
-                        ValueError,
-                        "observations added together must have the same time")
-                        
+        require_all(requirements)
+                                
         self._prune(time)
         self.observations.extend(observations)
+
+        self._redundancy = self._redundancy_weights(self.observations)
 
         return observations
 
@@ -171,8 +132,13 @@ class OccupancyField:
         returned            = np.asarray([o.returned  for o in observations], dtype = bool)
         observation_weights = np.asarray([o.weight for o in observations],    dtype = float)
 
-        redundancy_weights  = self._redundancy_weights(observations) 
-        weights             = observation_weights * redundancy_weights
+        if (len(observations) == len(self.observations) and 
+            all(observation is retained for observation, retained in zip(observations, self.observations))):
+            redundancy_weights = self._redundancy
+        else:
+            redundancy_weights = self._redundancy_weights(observations)
+
+        weights = observation_weights * redundancy_weights
 
         surface_evidence    = self.surface_kernel.evaluate(points = points[None, :, :],
                                                            centre = endpoints[:, None, :])
@@ -218,13 +184,8 @@ class OccupancyField:
         alpha = np.asarray(alpha, dtype = float)
         beta  = np.asarray(beta,  dtype = float)
 
-        require(alpha.shape == (len(points),),
-                ValueError,
-                "prior alpha must have shape (n,)")
-
-        require(beta.shape == (len(points),),
-                ValueError,
-                "prior beta must have shape (n,)")
+        require(alpha.shape == (len(points),), ValueError, "prior alpha must have shape (n,)")
+        require(beta.shape == (len(points),),  ValueError, "prior beta must have shape (n,)")
 
         support = np.zeros(len(points), dtype = bool)
 
@@ -232,9 +193,7 @@ class OccupancyField:
 
             time = self.observations[-1].time if time is None else float(time)
 
-            require(np.isfinite(time),
-                    ValueError,
-                    "time must be finite")
+            require(np.isfinite(time), ValueError, "time must be finite")
 
             observations = [observation
                             for observation in self.observations
@@ -266,13 +225,8 @@ class OccupancyField:
         if scalar:
             points = points[None, :]
 
-        require(points.ndim == 2 and points.shape[1] == self.dimension,
-                ValueError,
-                f"points must have shape ({self.dimension},) or (n, {self.dimension})")
-
-        require(np.all(np.isfinite(points)),
-                ValueError,
-                "points must be finite")
+        require(points.ndim == 2 and points.shape[1] == self.dimension, ValueError, f"points must have shape ({self.dimension},) or (n, {self.dimension})")
+        require(np.all(np.isfinite(points)),                            ValueError,  "points must be finite")
 
         return points, scalar
 
@@ -281,7 +235,7 @@ class OccupancyField:
                             observations : list[OccupancyObservation]) -> np.ndarray:
 
         if not observations:
-                return np.empty(0, dtype = float)
+            return np.empty(0, dtype = float)
 
         states     = np.asarray([observation.state
                                 for observation in observations],
@@ -290,7 +244,9 @@ class OccupancyField:
         distance   = self.state_kernel.distance(points = states[:, None, :],
                                                 centre = states[None, :, :])
 
-        similarity = np.exp(-0.5 * distance)
+        similarity                                         = np.exp(-0.5 * distance)
+        similarity[distance > self.state_support_sigma**2] = 0.0
+
         density    = np.sum(similarity, axis = 1)
 
         return 1.0 / density
@@ -298,6 +254,9 @@ class OccupancyField:
 
     def _prune(self,
                time : float) -> None:
+
+        if not self.observations:
+            return
 
         times             = np.asarray([observation.time 
                                         for observation in self.observations], 
@@ -315,6 +274,7 @@ class OccupancyField:
         """Removes all observations from the field."""
 
         self.observations.clear()
+        self._redundancy = np.empty(0, dtype = float)
 
 
     def __len__(self) -> int:
