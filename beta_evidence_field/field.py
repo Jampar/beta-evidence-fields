@@ -186,39 +186,40 @@ class OccupancyField:
                  points       : np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluates occupied and free evidence from the supplied observations."""
 
-        origins    = np.asarray([o.origin    for o in observations], dtype = float)
-        directions = np.asarray([o.direction for o in observations], dtype = float)
-        endpoints  = np.asarray([o.endpoint  for o in observations], dtype = float)
-        returned   = np.asarray([o.returned  for o in observations], dtype = bool)
-        weights    = np.asarray([o.weight    for o in observations], dtype = float)
+        origins             = np.asarray([o.origin    for o in observations], dtype = float)
+        directions          = np.asarray([o.direction for o in observations], dtype = float)
+        endpoints           = np.asarray([o.endpoint  for o in observations], dtype = float)
+        returned            = np.asarray([o.returned  for o in observations], dtype = bool)
+        observation_weights = np.asarray([o.weight for o in observations], dtype = float)
 
-        surface_evidence = self.surface_kernel.evaluate(points = points[None, :, :],
-                                                        centre = endpoints[:, None, :])
+        redundancy_weights  = self._redundancy_weights(observations)
+        weights             = observation_weights * redundancy_weights
 
-        surface_evidence *= returned[:, None]
+        surface_evidence    = self.surface_kernel.evaluate(points = points[None, :, :],
+                                                           centre = endpoints[:, None, :])
 
-        free_evidence = self.free_kernel.convolve_line(points = points[None, :, :],
-                                                       start  = origins[:, None, :],
-                                                       end    = endpoints[:, None, :])
+        surface_evidence   *= returned[:, None]
+        free_evidence       = self.free_kernel.convolve_line(points = points[None, :, :],
+                                                             start  = origins[:, None, :],
+                                                             end    = endpoints[:, None, :])
 
-        precision = np.einsum("ri,ij,rj->r",
-                              directions,
-                              self.free_kernel.precision,
-                              directions,
-                              optimize = True)
+        precision           = np.einsum("ri,ij,rj->r",
+                                        directions,
+                                        self.free_kernel.precision,
+                                        directions,
+                                        optimize = True)
 
-        free_evidence *= np.sqrt(precision/(2.0*np.pi))[:, None]
-        free_evidence *= 1.0 - surface_evidence
+        free_evidence      *= np.sqrt(precision/(2.0*np.pi))[:, None]
+        free_evidence      *= 1.0 - surface_evidence
 
-        alpha = self.surface_evidence_strength * np.sum(weights[:, None] * surface_evidence, axis = 0)
-        beta = self.free_evidence_strength * np.sum(weights[:, None] * free_evidence, axis = 0)
+        alpha               = self.surface_evidence_strength * np.sum(weights[:, None] * surface_evidence, axis = 0)
+        beta                = self.free_evidence_strength * np.sum(weights[:, None] * free_evidence, axis = 0)
 
         if np.any(returned):
             surface_distance = self.surface_kernel.distance(points = points[None, :, :],
                                                             centre = endpoints[:, None, :])
 
-            support = np.any(returned[:, None] & 
-                            (surface_distance <= self.support_sigma**2), axis = 0)
+            support = np.any(returned[:, None] & (surface_distance <= self.support_sigma**2), axis = 0)
 
         else:
             support = np.zeros(len(points), dtype = bool)
@@ -297,29 +298,23 @@ class OccupancyField:
         return points, scalar
 
 
-    def _novelty(self,
-                 observations : list[OccupancyObservation]) -> np.ndarray:
+    def _redundancy_weights(self,
+                            observations : list[OccupancyObservation]) -> np.ndarray:
 
-        if not self.observations:
-                return np.ones(len(observations), dtype = float)
+        if not observations:
+                return np.empty(0, dtype = float)
 
-        time     = observations[0].time
-        previous = [observation
-                    for observation in self.observations
-                    if observation.time < time]
+        states     = np.asarray([observation.state
+                                for observation in observations],
+                                dtype = float)
 
-        if not previous:
-                return np.ones(len(observations), dtype = float)
+        distance   = self.state_kernel.distance(points = states[:, None, :],
+                                                centre = states[None, :, :])
 
-        states          = np.asarray([observation.state for observation in observations], dtype = float)
-        previous_states = np.asarray([observation.state for observation in previous], dtype = float)
-        distance        = self.state_kernel.distance(points = states[:, None, :], 
-                                                     centre = previous_states[None, :, :])
-            
         similarity = np.exp(-0.5 * distance)
         density    = np.sum(similarity, axis = 1)
 
-        return 1.0 / (1.0 + density)
+        return 1.0 / density
 
 
     def _prune(self,
