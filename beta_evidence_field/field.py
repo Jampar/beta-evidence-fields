@@ -184,9 +184,9 @@ class OccupancyField:
         directions          = np.asarray([o.direction for o in observations], dtype = float)
         endpoints           = np.asarray([o.endpoint  for o in observations], dtype = float)
         returned            = np.asarray([o.returned  for o in observations], dtype = bool)
-        observation_weights = np.asarray([o.weight for o in observations], dtype = float)
+        observation_weights = np.asarray([o.weight for o in observations],    dtype = float)
 
-        redundancy_weights  = self._redundancy_weights(observations)
+        redundancy_weights  = self._redundancy_weights(observations) 
         weights             = observation_weights * redundancy_weights
 
         surface_evidence    = self.surface_kernel.evaluate(points = points[None, :, :],
