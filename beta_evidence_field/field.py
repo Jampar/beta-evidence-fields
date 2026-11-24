@@ -170,12 +170,6 @@ class OccupancyField:
                     "observations added together must have the same time")
             
         self._prune(time)
-
-        novelty = self._novelty(observations)
-
-        for observation, novelty_i in zip(observations, novelty):
-            observation.novelty = float(novelty_i)
-
         self.observations.extend(observations)
 
         return observations
