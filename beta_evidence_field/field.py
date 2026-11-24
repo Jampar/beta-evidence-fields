@@ -315,8 +315,11 @@ class OccupancyField:
         previous_states = np.asarray([observation.state for observation in previous], dtype = float)
         distance        = self.state_kernel.distance(points = states[:, None, :], 
                                                      centre = previous_states[None, :, :])
+            
+        similarity = np.exp(-0.5 * distance)
+        density    = np.sum(similarity, axis = 1)
 
-        return 1.0 - np.exp(-0.5 * np.min(distance, axis = 1))
+        return 1.0 / (1.0 + density)
 
 
     def _prune(self,
