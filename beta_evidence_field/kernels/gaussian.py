@@ -1,5 +1,7 @@
 """Gaussian kernel operations for continuous evidence fields."""
 
+from scipy.linalg  import solve_triangular
+from scipy.spatial import cKDTree
 from scipy.special import erf
 
 import numpy as np
@@ -42,7 +44,7 @@ class GaussianKernel:
             raise ValueError("Covariance must be symmetric.")
 
         try:
-            np.linalg.cholesky(covariance)
+            cholesky = np.linalg.cholesky(covariance)
 
         except np.linalg.LinAlgError as error:
             raise ValueError(
@@ -50,6 +52,7 @@ class GaussianKernel:
 
         self.covariance = covariance
         self.precision  = np.linalg.inv(covariance)
+        self.cholesky   = cholesky
 
 
     @property
@@ -57,6 +60,33 @@ class GaussianKernel:
         """Returns the spatial dimension of the kernel."""
 
         return self.covariance.shape[0]
+
+
+    def sparse_distance(self,
+                        points        : np.ndarray,
+                        support_sigma : float):
+        """Calculates sparse squared Mahalanobis distances within support."""
+
+        points = np.asarray(points, dtype = float)
+
+        if points.ndim != 2:
+            raise ValueError("Points must be a matrix.")
+
+        if points.shape[1] != self.dimension:
+            raise ValueError("Point dimension does not match covariance.")
+
+        normalised = solve_triangular(self.cholesky,
+                                      points.T,
+                                      lower = True).T
+
+        tree     = cKDTree(normalised)
+        distance = tree.sparse_distance_matrix(tree,
+                                               max_distance = support_sigma,
+                                               output_type  = "coo_matrix")
+
+        distance.data **= 2
+
+        return distance
 
 
     def distance(self,

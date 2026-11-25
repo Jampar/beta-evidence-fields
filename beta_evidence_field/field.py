@@ -7,9 +7,6 @@ from .prior         import OccupancyPrior
 from .query         import OccupancyQuery
 from ._validation   import require, require_all
 
-from scipy.linalg   import solve_triangular
-from scipy.spatial  import cKDTree
-
 
 DEFAULT_SUPPORT_SIGMA           = 3.0
 DEFAULT_STATE_SUPPORT_SIGMA     = 3.0
@@ -235,7 +232,7 @@ class OccupancyField:
 
 
     def _redundancy_weights(self,
-                        observations : list[OccupancyObservation]) -> np.ndarray:
+                            observations : list[OccupancyObservation]) -> np.ndarray:
 
         if not observations:
             return np.empty(0, dtype = float)
@@ -244,23 +241,14 @@ class OccupancyField:
                             for observation in observations],
                             dtype = float)
 
-        chol = np.linalg.cholesky(self.state_kernel.covariance)
+        distance    = self.state_kernel.sparse_distance(points        = states,
+                                                        support_sigma = self.state_support_sigma)
 
-        normalised_states = solve_triangular(chol,
-                                            states.T,
-                                            lower = True).T
+        similarity  = np.exp(-0.5 * distance.data)
 
-        tree = cKDTree(normalised_states)
-
-        distance = tree.sparse_distance_matrix(tree,
-                                               max_distance = self.state_support_sigma,
-                                               output_type  = "coo_matrix")
-
-        similarity = np.exp(-0.5 * distance.data**2)
-
-        density = np.bincount(distance.row,
-                            weights   = similarity,
-                            minlength = len(states))
+        density     = np.bincount(distance.row,
+                                  weights   = similarity,
+                                  minlength = len(states))
 
         return 1.0 / density
 
