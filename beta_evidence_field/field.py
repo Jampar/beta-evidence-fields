@@ -7,6 +7,9 @@ from .prior         import OccupancyPrior
 from .query         import OccupancyQuery
 from ._validation   import require, require_all
 
+from scipy.linalg   import solve_triangular
+from scipy.spatial  import cKDTree
+
 
 DEFAULT_SUPPORT_SIGMA           = 3.0
 DEFAULT_STATE_SUPPORT_SIGMA     = 3.0
@@ -232,22 +235,32 @@ class OccupancyField:
 
 
     def _redundancy_weights(self,
-                            observations : list[OccupancyObservation]) -> np.ndarray:
+                        observations : list[OccupancyObservation]) -> np.ndarray:
 
         if not observations:
             return np.empty(0, dtype = float)
 
-        states     = np.asarray([observation.state
-                                for observation in observations],
-                                dtype = float)
+        states = np.asarray([observation.state
+                            for observation in observations],
+                            dtype = float)
 
-        distance   = self.state_kernel.distance(points = states[:, None, :],
-                                                centre = states[None, :, :])
+        chol = np.linalg.cholesky(self.state_kernel.covariance)
 
-        similarity                                         = np.exp(-0.5 * distance)
-        similarity[distance > self.state_support_sigma**2] = 0.0
+        normalised_states = solve_triangular(chol,
+                                            states.T,
+                                            lower = True).T
 
-        density    = np.sum(similarity, axis = 1)
+        tree = cKDTree(normalised_states)
+
+        distance = tree.sparse_distance_matrix(tree,
+                                               max_distance = self.state_support_sigma,
+                                               output_type  = "coo_matrix")
+
+        similarity = np.exp(-0.5 * distance.data**2)
+
+        density = np.bincount(distance.row,
+                            weights   = similarity,
+                            minlength = len(states))
 
         return 1.0 / density
 

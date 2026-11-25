@@ -26,6 +26,25 @@ def make_observation(time     : float = 0.0,
                                 time      = time)
 
 
+def dense_redundancy_weights(field        : OccupancyField,
+                             observations : list[OccupancyObservation]) -> np.ndarray:
+
+    states = np.asarray([observation.state
+                         for observation in observations],
+                        dtype = float)
+
+    distance = field.state_kernel.distance(points = states[:, None, :],
+                                           centre = states[None, :, :])
+
+    similarity = np.exp(-0.5 * distance)
+    similarity[distance > field.state_support_sigma**2] = 0.0
+
+    density = np.sum(similarity,
+                     axis = 1)
+
+    return 1.0 / density
+
+
 def test_empty_field_returns_prior():
 
     field = make_field()
@@ -344,4 +363,24 @@ def test_redundancy_cache_matches_observations_after_pruning():
     expected = field._redundancy_weights(field.observations)
 
     np.testing.assert_allclose(field._redundancy,
+                               expected)
+
+
+def test_sparse_redundancy_matches_dense_reference():
+
+    field = make_field()
+
+    observations = [make_observation(time = time, range = range)
+                    for time, range in [(0.0, 1.0),
+                                        (0.2, 1.1),
+                                        (0.5, 1.5),
+                                        (1.0, 2.0),
+                                        (2.0, 3.0)]]
+
+    expected = dense_redundancy_weights(field,
+                                        observations)
+
+    actual = field._redundancy_weights(observations)
+
+    np.testing.assert_allclose(actual,
                                expected)

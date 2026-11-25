@@ -36,4 +36,4 @@ pyyaml = ">=6.0.3,<7"
 
 
 [tool.pixi.tasks]
-test = "pytest"
+tests = "pytest"
