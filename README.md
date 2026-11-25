@@ -68,13 +68,11 @@ from beta_evidence_field import OccupancyField, OccupancyObservation
 
 field = OccupancyField.from_yaml("config/example_2d_config.yaml")
 
-observation = OccupancyObservation(
-    origin    = np.array([0.0, 0.0]),
-    direction = np.array([1.0, 0.0]),
-    range     = 2.0,
-    returned  = True,
-    time      = 0.0,
-)
+observation = OccupancyObservation(origin    = np.array([0.0, 0.0]),
+                                   direction = np.array([1.0, 0.0]),
+                                   range     = 2.0,
+                                   returned  = True,
+                                   time      = 0.0)
 
 field.add([observation])
 
