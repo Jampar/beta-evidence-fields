@@ -24,12 +24,14 @@ def test_covariance_validation():
 
 
 def test_dimension():
+
     kernel = GaussianKernel(np.eye(3))
-    
+
     assert kernel.dimension == 3
 
 
 def test_distance_at_centre():
+
     kernel = GaussianKernel(np.eye(2))
     point  = np.array([1.0, 2.0])
 
@@ -38,15 +40,82 @@ def test_distance_at_centre():
 
 def test_distance_identity():
 
-    kernel      = GaussianKernel(np.eye(2))
-    points      = np.array([[1.0, 0.0],
-                            [0.0, 2.0],
-                            [1.0, 2.0]])
+    kernel   = GaussianKernel(np.eye(2))
+    points   = np.array([[1.0, 0.0],
+                         [0.0, 2.0],
+                         [1.0, 2.0]])
 
-    centre      = np.zeros(2)
-    expected    = np.array([1.0, 4.0, 5.0])
+    centre   = np.zeros(2)
+    expected = np.array([1.0, 4.0, 5.0])
 
-    np.testing.assert_allclose(kernel.distance(points, centre), expected)
+    np.testing.assert_allclose(kernel.distance(points, centre),
+                               expected)
+
+
+def test_distance_dimension_validation():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    with pytest.raises(ValueError):
+        kernel.distance(points = np.zeros(3),
+                        centre = np.zeros(2))
+
+    with pytest.raises(ValueError):
+        kernel.distance(points = np.zeros(2),
+                        centre = np.zeros(3))
+
+
+def test_sparse_distance_matches_dense_distance():
+
+    kernel = GaussianKernel(np.array([[2.0, 0.3],
+                                      [0.3, 1.0]]))
+
+    points = np.array([[0.0, 0.0],
+                       [0.5, 0.2],
+                       [1.0, 1.0],
+                       [3.0, 2.0]])
+
+    sparse = kernel.sparse_distance(points,
+                                    support_sigma = 2.0)
+
+    dense = kernel.distance(points = points[:, None, :],
+                            centre = points[None, :, :])
+
+    np.testing.assert_allclose(sparse.data,
+                               dense[sparse.row, sparse.col])
+
+
+def test_sparse_distance_respects_support():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    points = np.array([[0.0, 0.0],
+                       [1.0, 0.0],
+                       [4.0, 0.0]])
+
+    distance = kernel.sparse_distance(points,
+                                      support_sigma = 1.5)
+
+    pairs = set(zip(distance.row,
+                    distance.col))
+
+    assert (0, 1) in pairs
+    assert (1, 0) in pairs
+    assert (0, 2) not in pairs
+    assert (2, 0) not in pairs
+
+
+def test_sparse_distance_validation():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    with pytest.raises(ValueError):
+        kernel.sparse_distance(np.array([0.0, 0.0]),
+                               support_sigma = 3.0)
+
+    with pytest.raises(ValueError):
+        kernel.sparse_distance(np.zeros((3, 3)),
+                               support_sigma = 3.0)
 
 
 def test_evaluate_at_centre():
@@ -69,32 +138,36 @@ def test_evaluate_known_distance():
 
 def test_evaluate_vectorised():
 
-    kernel      = GaussianKernel(np.eye(2))
+    kernel = GaussianKernel(np.eye(2))
 
-    points      = np.array([[0.0, 0.0],
-                            [1.0, 0.0],
-                            [0.0, 2.0]])
+    points   = np.array([[0.0, 0.0],
+                         [1.0, 0.0],
+                         [0.0, 2.0]])
 
-    values      = kernel.evaluate(points, np.zeros(2))
-    expected    = np.exp(-0.5 * np.array([0.0, 1.0, 4.0]))
+    values   = kernel.evaluate(points, np.zeros(2))
+    expected = np.exp(-0.5 * np.array([0.0, 1.0, 4.0]))
 
-    np.testing.assert_allclose(values, expected)
+    np.testing.assert_allclose(values,
+                               expected)
 
 
 def test_convolve_line_against_numerical_integration():
 
-    kernel          = GaussianKernel(np.array([[2.0, 0.3],
-                                               [0.3, 1.0]]))
+    kernel = GaussianKernel(np.array([[2.0, 0.3],
+                                      [0.3, 1.0]]))
 
-    point           = np.array([0.4, 0.7])
-    start           = np.array([-1.0, 0.2])
-    end             = np.array([2.0, 1.4])
+    point     = np.array([0.4, 0.7])
+    start     = np.array([-1.0, 0.2])
+    end       = np.array([2.0, 1.4])
 
-    segment         = end - start
-    length          = np.linalg.norm(segment)
-    direction       = segment/length
+    segment   = end - start
+    length    = np.linalg.norm(segment)
+    direction = segment/length
 
-    numerical, _    = quad(lambda s: kernel.evaluate(point, start + s * direction), 0.0, length)
+    numerical, _ = quad(lambda s: kernel.evaluate(point,
+                                                   start + s*direction),
+                        0.0,
+                        length)
 
     analytic = kernel.convolve_line(points = point,
                                     start  = start,
@@ -107,46 +180,66 @@ def test_convolve_line_against_numerical_integration():
 
 def test_convolve_line_zero_length():
 
-    kernel  = GaussianKernel(np.eye(2))
+    kernel = GaussianKernel(np.eye(2))
 
-    point   = np.array([1.0, 1.0])
-    start   = np.array([0.0, 0.0])
+    point = np.array([1.0, 1.0])
+    start = np.array([0.0, 0.0])
 
-    value   = kernel.convolve_line(points = point,
-                                   start  = start,
-                                   end    = start)
+    value = kernel.convolve_line(points = point,
+                                 start  = start,
+                                 end    = start)
 
     assert value == pytest.approx(0.0)
 
 
 def test_convolve_line_vectorised():
 
-    kernel  = GaussianKernel(np.eye(2))
+    kernel = GaussianKernel(np.eye(2))
 
-    points  = np.array([[0.0, 0.0],
-                        [1.0, 1.0]])
+    points = np.array([[0.0, 0.0],
+                       [1.0, 1.0]])
 
-    starts  = np.array([[-1.0, 0.0],
-                        [0.0, 1.0]])
+    starts = np.array([[-1.0, 0.0],
+                       [0.0, 1.0]])
 
-    ends    = np.array([[1.0, 0.0],
-                        [2.0, 1.0]])
+    ends   = np.array([[1.0, 0.0],
+                       [2.0, 1.0]])
 
-    values  = kernel.convolve_line(points = points,
-                                   start  = starts,
-                                   end    = ends)
+    values = kernel.convolve_line(points = points,
+                                  start  = starts,
+                                  end    = ends)
 
     assert values.shape == (2,)
     assert np.all(np.isfinite(values))
     assert np.all(values >= 0.0)
 
 
+def test_convolve_line_dimension_validation():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    with pytest.raises(ValueError):
+        kernel.convolve_line(points = np.zeros(3),
+                             start  = np.zeros(2),
+                             end    = np.zeros(2))
+
+    with pytest.raises(ValueError):
+        kernel.convolve_line(points = np.zeros(2),
+                             start  = np.zeros(3),
+                             end    = np.zeros(2))
+
+    with pytest.raises(ValueError):
+        kernel.convolve_line(points = np.zeros(2),
+                             start  = np.zeros(2),
+                             end    = np.zeros(3))
+
+
 def test_three_dimensions():
 
-    kernel  = GaussianKernel(np.eye(3))
+    kernel = GaussianKernel(np.eye(3))
 
-    point   = np.array([1.0, 2.0, 2.0])
-    centre  = np.zeros(3)
+    point  = np.array([1.0, 2.0, 2.0])
+    centre = np.zeros(3)
 
     assert kernel.distance(point, centre) == pytest.approx(9.0)
     assert kernel.evaluate(point, centre) == pytest.approx(np.exp(-4.5))

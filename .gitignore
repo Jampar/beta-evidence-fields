@@ -3,3 +3,10 @@
 !.pixi/config.toml
 
 __pycache__
+
+# Test and coverage output
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/

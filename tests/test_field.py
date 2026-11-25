@@ -39,10 +39,7 @@ def dense_redundancy_weights(field        : OccupancyField,
     similarity = np.exp(-0.5 * distance)
     similarity[distance > field.state_support_sigma**2] = 0.0
 
-    density = np.sum(similarity,
-                     axis = 1)
-
-    return 1.0 / density
+    return 1.0 / np.sum(similarity, axis = 1)
 
 
 def test_empty_field_returns_prior():
@@ -65,6 +62,16 @@ def test_add():
 
     assert added == [observation]
     assert len(field) == 1
+
+
+def test_add_empty():
+
+    field = make_field()
+
+    added = field.add([])
+
+    assert added == []
+    assert len(field) == 0
 
 
 def test_clear():
@@ -131,9 +138,9 @@ def test_vectorised_query_matches_scalar_queries():
     vector = field.query(points)
     scalar = [field.query(point) for point in points]
 
-    np.testing.assert_allclose(vector.alpha,      np.asarray([query.alpha   for query in scalar], dtype = float))
-    np.testing.assert_allclose(vector.beta,       np.asarray([query.beta    for query in scalar], dtype = float))
-    np.testing.assert_array_equal(vector.support, np.asarray([query.support for query in scalar], dtype = bool))
+    np.testing.assert_allclose(vector.alpha,      [query.alpha   for query in scalar])
+    np.testing.assert_allclose(vector.beta,       [query.beta    for query in scalar])
+    np.testing.assert_array_equal(vector.support, [query.support for query in scalar])
 
 
 def test_observations_must_be_chronological():
@@ -185,45 +192,35 @@ def test_future_observations_do_not_affect_past_queries():
     assert query.support is False
 
 
-def test_identical_observations_share_effective_weight():
+def test_historical_query_uses_subset_redundancy():
 
     field = make_field()
 
-    observations = [make_observation(),
-                    make_observation()]
+    first  = make_observation(time = 0.0)
+    second = make_observation(time = 1.0)
 
-    weights = field._redundancy_weights(observations)
+    field.add([first])
+    field.add([second])
 
-    np.testing.assert_allclose(weights,
-                               np.array([0.5, 0.5]))
+    query = field.query(first.endpoint,
+                        time = 0.0)
 
+    reference = make_field()
+    reference.add([first])
 
-def test_identical_observations_have_unit_total_effective_weight():
+    expected = reference.query(first.endpoint)
 
-    field = make_field()
-
-    observations = [make_observation()
-                    for _ in range(10)]
-
-    weights = field._redundancy_weights(observations)
-
-    assert np.sum(weights) == pytest.approx(1.0)
+    assert query.alpha == pytest.approx(expected.alpha)
+    assert query.beta  == pytest.approx(expected.beta)
 
 
-def test_different_ranges_reduce_redundancy():
+def test_empty_redundancy_weights():
 
     field = make_field()
 
-    same = [make_observation(range = 2.0),
-            make_observation(range = 2.0)]
+    weights = field._redundancy_weights([])
 
-    different = [make_observation(range = 2.0),
-                 make_observation(range = 4.0)]
-
-    same_weights      = field._redundancy_weights(same)
-    different_weights = field._redundancy_weights(different)
-
-    assert np.all(different_weights > same_weights)
+    assert weights.shape == (0,)
 
 
 def test_identical_observations_share_effective_weight():
@@ -276,8 +273,7 @@ def test_observations_inside_state_support_are_redundant():
     observations = [make_observation(time = 0.0),
                     make_observation(time = sigma_t)]
 
-    weights = field._redundancy_weights(observations)
-
+    weights  = field._redundancy_weights(observations)
     expected = 1.0/(1.0 + np.exp(-0.5))
 
     np.testing.assert_allclose(weights,
@@ -299,16 +295,24 @@ def test_observations_outside_state_support_are_not_redundant():
                                np.ones(2))
 
 
-def test_redundancy_cache_matches_retained_observations():
+def test_sparse_redundancy_matches_dense_reference():
 
     field = make_field()
 
-    field.add([make_observation(),
-               make_observation()])
+    observations = [make_observation(time = time,
+                                     range = range)
+                    for time, range in [(0.0, 1.0),
+                                        (0.2, 1.1),
+                                        (0.5, 1.5),
+                                        (1.0, 2.0),
+                                        (2.0, 3.0)]]
 
-    expected = field._redundancy_weights(field.observations)
+    expected = dense_redundancy_weights(field,
+                                        observations)
 
-    np.testing.assert_allclose(field._redundancy,
+    actual = field._redundancy_weights(observations)
+
+    np.testing.assert_allclose(actual,
                                expected)
 
 
@@ -327,26 +331,17 @@ def test_redundancy_cache_updates_on_add():
                                np.array([0.5, 0.5]))
 
 
-def test_historical_query_uses_subset_redundancy():
+def test_redundancy_cache_matches_retained_observations():
 
     field = make_field()
 
-    first  = make_observation(time = 0.0)
-    second = make_observation(time = 1.0)
+    field.add([make_observation(),
+               make_observation()])
 
-    field.add([first])
-    field.add([second])
+    expected = field._redundancy_weights(field.observations)
 
-    query = field.query(first.endpoint,
-                        time = 0.0)
-
-    reference = make_field()
-    reference.add([first])
-
-    expected = reference.query(first.endpoint)
-
-    assert query.alpha == pytest.approx(expected.alpha)
-    assert query.beta  == pytest.approx(expected.beta)
+    np.testing.assert_allclose(field._redundancy,
+                               expected)
 
 
 def test_redundancy_cache_matches_observations_after_pruning():
@@ -363,24 +358,4 @@ def test_redundancy_cache_matches_observations_after_pruning():
     expected = field._redundancy_weights(field.observations)
 
     np.testing.assert_allclose(field._redundancy,
-                               expected)
-
-
-def test_sparse_redundancy_matches_dense_reference():
-
-    field = make_field()
-
-    observations = [make_observation(time = time, range = range)
-                    for time, range in [(0.0, 1.0),
-                                        (0.2, 1.1),
-                                        (0.5, 1.5),
-                                        (1.0, 2.0),
-                                        (2.0, 3.0)]]
-
-    expected = dense_redundancy_weights(field,
-                                        observations)
-
-    actual = field._redundancy_weights(observations)
-
-    np.testing.assert_allclose(actual,
                                expected)

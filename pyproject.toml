@@ -30,6 +30,7 @@ beta-evidence-fields = { path = ".", editable = true }
 
 [tool.pixi.dependencies]
 pytest = ">=9.2.0,<10"
+pytest-cov = ">=7,<8"
 matplotlib = ">=3.11.2,<4"
 tqdm = ">=4.70.1,<5"
 pyyaml = ">=6.0.3,<7"
@@ -37,3 +38,15 @@ pyyaml = ">=6.0.3,<7"
 
 [tool.pixi.tasks]
 tests = "pytest"
+coverage = "pytest tests --cov=beta_evidence_field --cov-report=term-missing --cov-report=xml"
+
+
+[tool.coverage.run]
+branch = true
+source = ["beta_evidence_field"]
+
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under   = 95

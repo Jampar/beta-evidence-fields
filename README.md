@@ -1,6 +1,7 @@
 # Beta Evidence Fields
 
 [![Tests](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml/badge.svg)](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/Jampar/beta-evidence-fields/graph/badge.svg)](https://codecov.io/gh/Jampar/beta-evidence-fields)
 ![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 
 A Python library for continuous probabilistic occupancy fields constructed directly from range-sensor evidence.
