@@ -1,436 +1,22 @@
-# Beta Evidence Fields 
+# Beta Evidence Fields
 
-[![Beta Field Unit Tests](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml/badge.svg)](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml)
+[![Tests](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml/badge.svg)](https://github.com/Jampar/beta-evidence-fields/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 
-A Python library for continuous probabilistic occupancy fields from range-sensor evidence.
+A Python library for continuous probabilistic occupancy fields constructed directly from range-sensor evidence.
 
-Beta Evidence Fields (BEFs) represents occupancy as a continuous Beta distribution constructed directly from range observations. Returned measurements contribute occupied evidence around their endpoints, while observation rays contribute free-space evidence along their length. Gaussian spatial kernels provide a continuous representation, and temporal Gaussian weighting allows evidence to decay as observations age.
-
-
-## Mathematical Definition
-
-### Notation
-
-Let the environment have spatial dimension $D$, with query position
-
-```math
-\mathbf{x}\in\mathbb{R}^{D}.
-```
-
-A set of $N$ range observations is evaluated at $M$ query points. The $i$-th observation is
-
-```math
-\mathcal{O}_i
-=
-\left(
-\mathbf{o}_i,
-\mathbf{d}_i,
-\rho_i,
-r_i,
-t_i,
-w_i
-\right),
-```
-
-where:
-
-- $\mathbf{o}_i\in\mathbb{R}^{D}$ is the sensor origin;
-- $\mathbf{d}_i\in\mathbb{R}^{D}$ is a unit direction vector, with $\lVert\mathbf{d}_i\rVert_2=1$;
-- $\rho_i\in\mathbb{R}_{\geq 0}$ is the measured range or finite ray length;
-- $r_i\in\{0,1\}$ indicates whether the observation produced a return;
-- $t_i\in\mathbb{R}$ is the acquisition time; and
-- $w_i\in\mathbb{R}_{\geq 0}$ is the observation evidence weight.
-
-The corresponding ray endpoint is
-
-```math
-\mathbf{e}_i
-=
-\mathbf{o}_i+\rho_i\mathbf{d}_i.
-```
-
-The field is evaluated at query locations
-
-```math
-\mathbf{X}
-=
-\left\{\mathbf{x}_j\right\}_{j=1}^{M},
-\qquad
-\mathbf{x}_j\in\mathbb{R}^{D},
-```
-
-and query time $t\in\mathbb{R}$.
-
-### Spatial Gaussian kernel
-
-For a positive-definite covariance matrix $\boldsymbol{\Sigma}\in\mathbb{R}^{D\times D}$, define the peak-normalised Gaussian kernel
-
-```math
-K
-\left(
-\mathbf{x},
-\boldsymbol{\mu};
-\boldsymbol{\Sigma}
-\right)
-=
-\exp\!\left[
--\frac{1}{2}
-(\mathbf{x}-\boldsymbol{\mu})^{\mathsf{T}}
-\boldsymbol{\Sigma}^{-1}
-(\mathbf{x}-\boldsymbol{\mu})
-\right],
-```
-
-where $\mathbf{x}\in\mathbb{R}^{D}$ is the evaluation point and $\boldsymbol{\mu}\in\mathbb{R}^{D}$ is the kernel centre. The kernel is dimensionless and satisfies
-
-```math
-K
-\left(
-\boldsymbol{\mu},
-\boldsymbol{\mu};
-\boldsymbol{\Sigma}
-\right)
-=1.
-```
-
-### Temporal evidence weight
-
-Let $\sigma_t^2>0$ be the temporal variance. The temporally weighted evidence contributed by observation $i$ at query time $t$ is
-
-```math
-W_i(t)
-=
-w_i
-K_t
-\left(
-t,t_i;\sigma_t^2
-\right),
-```
-
-with
-
-```math
-K_t
-\left(
-t,t_i;\sigma_t^2
-\right)
-=
-\exp\!\left[
--\frac{(t-t_i)^2}{2\sigma_t^2}
-\right].
-```
-
-Collecting all observation weights gives
-
-```math
-\mathbf{W}(t)
-=
-\begin{bmatrix}
-W_1(t) & \cdots & W_N(t)
-\end{bmatrix}^{\mathsf{T}}
-\in\mathbb{R}^{N}.
-```
-
-### Occupied evidence
-
-Let $\boldsymbol{\Sigma}_s\in\mathbb{R}^{D\times D}$ be the occupied-evidence covariance. The occupied evidence from observation $i$ at position $\mathbf{x}$ is
-
-```math
-k_{s,i}
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_s
-\right)
-=
-r_i
-K
-\left(
-\mathbf{x},
-\mathbf{e}_i;
-\boldsymbol{\Sigma}_s
-\right).
-```
-
-Only observations with $r_i=1$ therefore contribute occupied evidence. Across all observations and query points, define
-
-```math
-[\mathbf{K}_s]_{ij}
-=
-k_{s,i}
-\left(
-\mathbf{x}_j;
-\boldsymbol{\Sigma}_s
-\right),
-\qquad
-\mathbf{K}_s\in\mathbb{R}^{N\times M}.
-```
-
-### Finite-ray free-space evidence
-
-Let $\boldsymbol{\Sigma}_f\in\mathbb{R}^{D\times D}$ be the free-space covariance. The normalised finite-ray kernel for observation $i$ is
-
-```math
-L_i
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_f
-\right)
-=
-\sqrt{
-\frac{
-\mathbf{d}_i^{\mathsf{T}}
-\boldsymbol{\Sigma}_f^{-1}
-\mathbf{d}_i
-}{2\pi}
-}
-\int_{0}^{\rho_i}
-K
-\left(
-\mathbf{x},
-\mathbf{o}_i+s\mathbf{d}_i;
-\boldsymbol{\Sigma}_f
-\right)
-\,\mathrm{d}s,
-```
-
-where $s\in[0,\rho_i]$ parameterises the finite observation ray.
-
-To prevent a returned observation from simultaneously contributing substantial free-space evidence at its occupied endpoint, define the endpoint suppression function
-
-```math
-S_i
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_s
-\right)
-=
-1-r_i
-K
-\left(
-\mathbf{x},
-\mathbf{e}_i;
-\boldsymbol{\Sigma}_s
-\right).
-```
-
-The free-space evidence from observation $i$ is then
-
-```math
-k_{f,i}
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_f,
-\boldsymbol{\Sigma}_s
-\right)
-=
-L_i
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_f
-\right)
-S_i
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_s
-\right).
-```
-
-For a non-returned observation, $r_i=0$, so $S_i(\mathbf{x};\boldsymbol{\Sigma}_s)=1$ and the complete finite ray contributes free-space evidence. For a returned observation, $r_i=1$, so free-space evidence is smoothly suppressed near the returned surface.
-
-At the returned endpoint,
-
-```math
-K
-\left(
-\mathbf{e}_i,
-\mathbf{e}_i;
-\boldsymbol{\Sigma}_s
-\right)
-=1,
-```
-
-and therefore
-
-```math
-k_{f,i}
-\left(
-\mathbf{e}_i;
-\boldsymbol{\Sigma}_f,
-\boldsymbol{\Sigma}_s
-\right)
-=0
-\qquad
-\text{when }r_i=1.
-```
-
-Across all observations and query points, define
-
-```math
-[\mathbf{K}_f]_{ij}
-=
-k_{f,i}
-\left(
-\mathbf{x}_j;
-\boldsymbol{\Sigma}_f,
-\boldsymbol{\Sigma}_s
-\right),
-\qquad
-\mathbf{K}_f\in\mathbb{R}^{N\times M}.
-```
-
-### Beta evidence field
-
-Let
-
-```math
-\boldsymbol{\alpha}_0,
-\boldsymbol{\beta}_0
-\in
-\mathbb{R}_{>0}^{M}
-```
-
-be the prior occupied- and free-evidence parameters evaluated at the query points. The posterior Beta parameters are
-
-```math
-\begin{aligned}
-\boldsymbol{\alpha}
-\left(
-\mathbf{X},t
-\right)
-&=
-\boldsymbol{\alpha}_0
-+
-\mathbf{K}_s^{\mathsf{T}}\mathbf{W}(t),
-\\[4pt]
-\boldsymbol{\beta}
-\left(
-\mathbf{X},t
-\right)
-&=
-\boldsymbol{\beta}_0
-+
-\mathbf{K}_f^{\mathsf{T}}\mathbf{W}(t).
-\end{aligned}
-```
-
-Equivalently, at a single query point $\mathbf{x}$,
-
-```math
-\begin{aligned}
-\alpha(\mathbf{x},t)
-&=
-\alpha_0(\mathbf{x})
-+
-\sum_{i=1}^{N}
-W_i(t)
-\,k_{s,i}
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_s
-\right),
-\\[4pt]
-\beta(\mathbf{x},t)
-&=
-\beta_0(\mathbf{x})
-+
-\sum_{i=1}^{N}
-W_i(t)
-\,k_{f,i}
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_f,
-\boldsymbol{\Sigma}_s
-\right).
-\end{aligned}
-```
-
-The occupancy probability at $\mathbf{x}$ and time $t$ is represented by
-
-```math
-p(\mathbf{x},t)
-\sim
-\mathrm{Beta}
-\left(
-\alpha(\mathbf{x},t),
-\beta(\mathbf{x},t)
-\right).
-```
-
-The expected occupancy probability is
-
-```math
-\mu(\mathbf{x},t)
-=
-\mathbb{E}[p(\mathbf{x},t)]
-=
-\frac{
-\alpha(\mathbf{x},t)
-}{
-\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)
-}.
-```
-
-The occupancy variance is
-
-```math
-\mathrm{Var}[p(\mathbf{x},t)]
-=
-\frac{
-\alpha(\mathbf{x},t)\beta(\mathbf{x},t)
-}{
-\left[
-\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)
-\right]^2
-\left[
-\alpha(\mathbf{x},t)+\beta(\mathbf{x},t)+1
-\right]
-}.
-```
-
-The evidence concentration is
-
-```math
-\lambda(\mathbf{x},t)
-=
-\alpha(\mathbf{x},t)+\beta(\mathbf{x},t).
-```
-
-Here, the mean $\mu(\mathbf{x},t)$ describes estimated occupancy, the variance describes uncertainty in that probability, and the concentration $\lambda(\mathbf{x},t)$ describes the total accumulated evidence strength.
-
-### Spatial support
-
-Let $\tau_s^2>0$ be the squared Mahalanobis support threshold. Spatial support indicates whether a query lies within the configured neighbourhood of at least one returned observation:
-
-```math
-s
-\left(
-\mathbf{x};
-\boldsymbol{\Sigma}_s,
-\tau_s^2
-\right)
-=
-\bigvee_{i=1}^{N}
-\left
-\{
-r_i=1
-\;\land\;
-(\mathbf{x}-\mathbf{e}_i)^{\mathsf{T}}
-\boldsymbol{\Sigma}_s^{-1}
-(\mathbf{x}-\mathbf{e}_i)
-\leq
-\tau_s^2
-\right\}.
-```
-
-Support is a geometric coverage indicator rather than an additional probabilistic statistic. It identifies locations close to returned surfaces under the occupied-evidence covariance and chosen threshold.
-
+Beta Evidence Fields (BEFs) represent occupied and free-space evidence with continuous Gaussian kernels and accumulate that evidence as the parameters of a Beta distribution. The representation is dimension-agnostic, supports vectorised queries, and normalises locally redundant observations in acquisition-state space.
 
 ## Features
 
-- Dimension-agnostic continuous Beta occupancy fields
-- Gaussian occupied and integrated free-space evidence
-- Weighted spatial and temporal evidence
-- Vectorised queries for occupancy, variance, concentration, and support
+- Continuous, dimension-agnostic Beta occupancy fields
+- Gaussian occupied evidence around returned surfaces
+- Analytically integrated free-space evidence along finite rays
+- Smooth free-space suppression at returned endpoints
+- Sampling-density normalisation in observation-state space
+- Finite-support sparse redundancy evaluation
+- Vectorised occupancy, variance, concentration, and support queries
+- Configurable spatial, state, and temporal support
 
 ## Installation
 
@@ -438,13 +24,13 @@ Python 3.10 or later is required.
 
 ### pip
 
-Install the latest version directly from GitHub:
+Install directly from GitHub:
 
 ```bash
 pip install git+https://github.com/Jampar/beta-evidence-fields.git
 ```
 
-Alternatively, clone the repository and install it locally:
+Or install a local clone:
 
 ```bash
 git clone https://github.com/Jampar/beta-evidence-fields.git
@@ -460,62 +46,46 @@ pip install -e .
 
 ### Pixi
 
-Pixi provides the reproducible development and testing environment used by the project.
-
-Clone the repository and install the environment:
+Pixi provides the reproducible development and testing environment used by the project:
 
 ```bash
 git clone https://github.com/Jampar/beta-evidence-fields.git
 cd beta-evidence-fields
 pixi install
-```
-
-Run the unit tests with:
-
-```bash
 pixi run test
 ```
 
 ## Basic Usage
 
+The repository includes an example configuration in `config/example_2d_config.yaml`:
+
 ```python
 import numpy as np
 
-from beta_evidence_field import (OccupancyField, OccupancyObservation, OccupancyPrior)
+from beta_evidence_field import OccupancyField, OccupancyObservation
 
 
-field       = OccupancyField(surface_covariance = 0.1**2*np.eye(2),
-                             free_covariance    = 0.2**2*np.eye(2),
-                             temporal_variance  = 10.0**2,
-                             prior              = OccupancyPrior())
+field = OccupancyField.from_yaml("config/example_2d_config.yaml")
 
-
-observation = OccupancyObservation(origin    = np.array([0.0, 0.0]),
-                                   direction = np.array([1.0, 0.0]),
-                                   range     = 2.0,
-                                   returned  = True,
-                                   time      = 0.0)
+observation = OccupancyObservation(
+    origin    = np.array([0.0, 0.0]),
+    direction = np.array([1.0, 0.0]),
+    range     = 2.0,
+    returned  = True,
+    time      = 0.0,
+)
 
 field.add([observation])
 
-query = field.query(points = np.array([2.0, 0.0]), time   = 0.0)
+query = field.query(np.array([2.0, 0.0]))
 
-print(query.alpha)
-print(query.beta)
 print(query.mean)
 print(query.variance)
 print(query.concentration)
 print(query.support)
 ```
-The field can then be constructed directly from the configuration:
 
-```python
-from beta_evidence_field import OccupancyField
-
-field = OccupancyField.from_yaml("../config/example_2d_config.yaml")
-```
-
-Multiple locations can be evaluated simultaneously:
+Multiple positions can be queried simultaneously:
 
 ```python
 points = np.array([[0.0, 0.0],
@@ -524,6 +94,194 @@ points = np.array([[0.0, 0.0],
 
 query = field.query(points)
 ```
+
+## Mathematical Definition
+
+### Observations
+
+Let the environment have spatial dimension $D$. Observation $i$ is
+
+```math
+\mathcal{O}_i = (\mathbf{o}_i,\mathbf{d}_i,r_i,\ell_i,t_i,w_i),
+```
+
+where $\mathbf{o}_i\in\mathbb{R}^D$ is the sensor origin, $\mathbf{d}_i\in\mathbb{R}^D$ is a unit direction, $r_i\geq0$ is the measured range, $\ell_i\in\{0,1\}$ indicates a return, $t_i$ is acquisition time, and $w_i\geq0$ is the observation evidence weight. The ray endpoint is
+
+```math
+\mathbf{e}_i = \mathbf{o}_i + r_i\mathbf{d}_i.
+```
+
+The field is evaluated at $M$ query positions $\mathbf{x}_j\in\mathbb{R}^D$.
+
+### Gaussian kernel
+
+For a positive-definite covariance $\boldsymbol{\Sigma}$, the peak-normalised Gaussian kernel is
+
+```math
+K(\mathbf{x},\boldsymbol{\mu};\boldsymbol{\Sigma})
+=
+\exp\!\left[
+-\frac12
+(\mathbf{x}-\boldsymbol{\mu})^{\mathsf T}
+\boldsymbol{\Sigma}^{-1}
+(\mathbf{x}-\boldsymbol{\mu})
+\right].
+```
+
+### Occupied evidence
+
+For occupied-evidence covariance $\boldsymbol{\Sigma}_s$,
+
+```math
+k_{s,i}(\mathbf{x})
+=
+\ell_i K(\mathbf{x},\mathbf{e}_i;\boldsymbol{\Sigma}_s).
+```
+
+Only returned observations contribute occupied evidence.
+
+### Finite-ray free-space evidence
+
+For free-space covariance $\boldsymbol{\Sigma}_f$, define
+
+```math
+L_i(\mathbf{x})
+=
+\sqrt{
+\frac{
+\mathbf{d}_i^{\mathsf T}\boldsymbol{\Sigma}_f^{-1}\mathbf{d}_i
+}{2\pi}}
+\int_0^{r_i}
+K(\mathbf{x},\mathbf{o}_i+s\mathbf{d}_i;\boldsymbol{\Sigma}_f)
+\,\mathrm ds.
+```
+
+Free-space evidence is smoothly suppressed around a returned endpoint:
+
+```math
+k_{f,i}(\mathbf{x})
+=
+L_i(\mathbf{x})
+\left[
+1-\ell_i K(\mathbf{x},\mathbf{e}_i;\boldsymbol{\Sigma}_s)
+\right].
+```
+
+Thus a returned observation contributes zero free-space evidence at its occupied endpoint, while a non-returned observation contributes along its complete finite ray.
+
+### Sampling-density normalisation
+
+Repeated observations should not increase evidence strength purely because the same region was sampled more densely. Each observation is therefore represented by an acquisition state $\mathbf{s}_i$ and compared using a Gaussian state kernel $K_s$.
+
+The local state-space density is
+
+```math
+\rho_i^{(s)}
+=
+\sum_{j\in\mathcal O}
+K_s(\mathbf{s}_i,\mathbf{s}_j),
+```
+
+with redundancy weight
+
+```math
+w_i^{(r)}
+=
+\frac{1}{\rho_i^{(s)}}.
+```
+
+Only observation pairs within the configured state support are evaluated. The effective evidence weight is
+
+```math
+\widetilde{w}_i = w_i w_i^{(r)}.
+```
+
+### Beta evidence field
+
+Let $\alpha_0(\mathbf{x})$ and $\beta_0(\mathbf{x})$ be the prior Beta parameters. The posterior field is
+
+```math
+\alpha(\mathbf{x})
+=
+\alpha_0(\mathbf{x})
++
+\sum_{i=1}^{N}
+\widetilde{w}_i k_{s,i}(\mathbf{x}),
+```
+
+```math
+\beta(\mathbf{x})
+=
+\beta_0(\mathbf{x})
++
+\sum_{i=1}^{N}
+\widetilde{w}_i k_{f,i}(\mathbf{x}).
+```
+
+Occupancy is represented by
+
+```math
+p(\mathbf{x})\sim\mathrm{Beta}(\alpha(\mathbf{x}),\beta(\mathbf{x})).
+```
+
+Its mean, variance, and concentration are
+
+```math
+\mu(\mathbf{x})
+=
+\frac{\alpha}{\alpha+\beta},
+```
+
+```math
+\mathrm{Var}[p(\mathbf{x})]
+=
+\frac{\alpha\beta}
+{(\alpha+\beta)^2(\alpha+\beta+1)},
+```
+
+```math
+\lambda(\mathbf{x})=\alpha+\beta.
+```
+
+The mean describes estimated occupancy, variance describes uncertainty in that probability, and concentration describes accumulated evidence strength.
+
+### Support
+
+A query has spatial support when it lies within the configured Mahalanobis neighbourhood of at least one returned surface:
+
+```math
+s(\mathbf{x})
+=
+\bigvee_{i=1}^N
+\left\{
+\ell_i=1
+\;\land\;
+(\mathbf{x}-\mathbf{e}_i)^{\mathsf T}
+\boldsymbol{\Sigma}_s^{-1}
+(\mathbf{x}-\mathbf{e}_i)
+\leq\tau_s^2
+\right\}.
+```
+
+Support is a geometric coverage indicator, not an additional probabilistic statistic.
+
+## Computational Characteristics
+
+Finite state support permits sparse redundancy evaluation. For $N$ retained observations and $E$ state-space neighbour pairs,
+
+```math
+T_{\mathrm{red}}(N)=O(N\log N+E).
+```
+
+With bounded local sampling density, $E=O(N)$ and measured redundancy/update behaviour is approximately linear over the characterised range. Increasing sampling density over a fixed extent drives $E$ toward $O(N^2)$, recovering the quadratic worst case.
+
+Evidence evaluation currently forms dense interactions between $N$ retained observations and $M$ query points, giving
+
+```math
+T_{\mathrm{query}}(N,M)=O(NM).
+```
+
+The reproducible computational experiments are provided in `examples/04_computation.ipynb`.
 
 ## Testing
 
@@ -534,4 +292,8 @@ pixi install
 pixi run test
 ```
 
-The test suite covers Gaussian kernels, occupancy observations, priors, query statistics, and occupancy-field behaviour.
+The test suite covers Gaussian kernels, sparse and dense distance consistency, occupancy observations, priors, query statistics, redundancy normalisation, and occupancy-field behaviour.
+
+## Development
+
+The project uses Pixi for reproducible development environments and `pytest` for testing. Example notebooks under `examples/` demonstrate the representation, evidence behaviour, sampling-density normalisation, and computational scaling.
