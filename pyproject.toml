@@ -37,9 +37,9 @@ pyyaml = ">=6.0.3,<7"
 
 
 [tool.pixi.tasks]
-tests = "pytest"
+tests    = "pytest"
 coverage = "pytest tests --cov=beta_evidence_field --cov-report=term-missing --cov-report=xml"
-
+data     = "python scripts/download_data.py"
 
 [tool.coverage.run]
 branch = true

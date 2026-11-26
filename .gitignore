@@ -10,3 +10,7 @@ __pycache__
 .coverage.*
 coverage.xml
 htmlcov/
+
+# External datasets
+data/*
+!data/data_dependencies.json
