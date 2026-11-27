@@ -359,3 +359,110 @@ def test_redundancy_cache_matches_observations_after_pruning():
 
     np.testing.assert_allclose(field._redundancy,
                                expected)
+
+
+def test_empty_field_returns_prior():
+
+    field = make_field()
+
+    query = field.query(np.array([1.0, 0.0]))
+
+    assert query.alpha   == pytest.approx(1.0)
+    assert query.beta    == pytest.approx(1.0)
+    assert query.support is False
+
+    np.testing.assert_allclose(query.alpha_gradient, np.zeros(2))
+    np.testing.assert_allclose(query.beta_gradient,  np.zeros(2))
+    np.testing.assert_allclose(query.gradient,       np.zeros(2))
+
+
+def test_vectorised_query_matches_scalar_queries():
+
+    field = make_field()
+
+    field.add([make_observation()])
+
+    points = np.array([[0.0, 0.0],
+                       [1.0, 0.0],
+                       [2.0, 0.0],
+                       [3.0, 0.0]])
+
+    vector = field.query(points)
+    scalar = [field.query(point) for point in points]
+
+    np.testing.assert_allclose(vector.alpha,          [query.alpha          for query in scalar])
+    np.testing.assert_allclose(vector.beta,           [query.beta           for query in scalar])
+    np.testing.assert_allclose(vector.alpha_gradient, [query.alpha_gradient for query in scalar])
+    np.testing.assert_allclose(vector.beta_gradient,  [query.beta_gradient  for query in scalar])
+    np.testing.assert_allclose(vector.gradient,       [query.gradient       for query in scalar])
+    np.testing.assert_array_equal(vector.support,     [query.support        for query in scalar])
+
+
+def test_query_gradient_matches_finite_difference():
+
+    field = make_field()
+
+    field.add([make_observation(range    = 2.0,
+                                returned = True)])
+
+    point = np.array([1.5, 0.4])
+
+    gradient = field.query(point).gradient
+
+    epsilon = 1e-6
+    finite  = np.empty(2)
+
+    for i in range(2):
+
+        offset    = np.zeros(2)
+        offset[i] = epsilon
+
+        finite[i] = (field.query(point + offset).mean
+                     - field.query(point - offset).mean)/(2.0*epsilon)
+
+    np.testing.assert_allclose(gradient,
+                               finite,
+                               rtol = 1e-5,
+                               atol = 1e-7)
+
+
+def test_evidence_gradients_match_finite_difference():
+
+    field       = make_field()
+    observation = make_observation(range    = 2.0,
+                                   returned = True)
+
+    field.add([observation])
+
+    point   = np.array([[1.5, 0.4]])
+    epsilon = 1e-6
+
+    alpha, beta, alpha_gradient, beta_gradient, _ = field.evidence(observations = field.observations,
+                                                                   points       = point)
+
+    finite_alpha = np.empty(2)
+    finite_beta  = np.empty(2)
+
+    for i in range(2):
+
+        offset       = np.zeros((1, 2))
+        offset[0, i] = epsilon
+
+        alpha_plus, beta_plus, _, _, _ = field.evidence(observations = field.observations,
+                                                        points       = point + offset)
+
+        alpha_minus, beta_minus, _, _, _ = field.evidence(observations = field.observations,
+                                                          points       = point - offset)
+
+        finite_alpha[i] = (alpha_plus[0] - alpha_minus[0])/(2.0*epsilon)
+        finite_beta[i]  = (beta_plus[0]  - beta_minus[0])/(2.0*epsilon)
+
+    np.testing.assert_allclose(alpha_gradient[0],
+                               finite_alpha,
+                               rtol = 1e-5,
+                               atol = 1e-7)
+
+    np.testing.assert_allclose(beta_gradient[0],
+                               finite_beta,
+                               rtol = 1e-5,
+                               atol = 1e-7)

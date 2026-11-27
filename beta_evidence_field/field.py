@@ -120,11 +120,9 @@ class OccupancyField:
 
         return observations
 
-    
-    def evidence(self,
-                 observations : list[OccupancyObservation],
-                 points       : np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Evaluates occupied and free evidence from the supplied observations."""
+    def _evidence_terms(self,
+                        observations : list[OccupancyObservation],
+                        points       : np.ndarray):
 
         origins             = np.asarray([o.origin    for o in observations], dtype = float)
         directions          = np.asarray([o.direction for o in observations], dtype = float)
@@ -132,7 +130,7 @@ class OccupancyField:
         returned            = np.asarray([o.returned  for o in observations], dtype = bool)
         observation_weights = np.asarray([o.weight    for o in observations], dtype = float)
 
-        if (len(observations) == len(self.observations) and 
+        if (len(observations) == len(self.observations) and
             all(observation is retained for observation, retained in zip(observations, self.observations))):
             redundancy_weights = self._redundancy
         else:
@@ -140,36 +138,58 @@ class OccupancyField:
 
         weights = observation_weights * redundancy_weights
 
-        surface_evidence    = self.surface_kernel.evaluate(points = points[None, :, :],
-                                                           centre = endpoints[:, None, :])
+        surface = returned[:, None] * self.surface_kernel.evaluate(points = points[None, :, :],
+                                                                   centre = endpoints[:, None, :])
 
-        surface_evidence   *= returned[:, None]
-        free_evidence       = self.free_kernel.convolve_line(points = points[None, :, :],
-                                                             start  = origins[:, None, :],
-                                                             end    = endpoints[:, None, :])
+        free = self.free_kernel.convolve_line(points = points[None, :, :],
+                                              start  = origins[:, None, :],
+                                              end    = endpoints[:, None, :])
 
-        precision           = np.einsum("ri,ij,rj->r",
-                                        directions,
-                                        self.free_kernel.precision,
-                                        directions,
-                                        optimize = True)
+        precision = np.einsum("ri,ij,rj->r",
+                              directions,
+                              self.free_kernel.precision,
+                              directions,
+                              optimize = True)
 
-        free_evidence      *= np.sqrt(precision/(2.0*np.pi))[:, None]
-        free_evidence      *= 1.0 - surface_evidence
+        normalisation = np.sqrt(precision / (2.0*np.pi))
 
-        alpha               = np.sum(weights[:, None] * surface_evidence, axis = 0)
-        beta                = np.sum(weights[:, None] * free_evidence, axis = 0)
+        return weights, surface, free, origins, endpoints, returned, normalisation
+
+
+    def evidence(self,
+                 observations : list[OccupancyObservation],
+                 points       : np.ndarray):
+        """Evaluates occupied and free evidence and their spatial gradients."""
+
+        weights, surface, free, origins, endpoints, returned, normalisation = self._evidence_terms(observations = observations,
+                                                                                                   points       = points,)
+
+        surface_gradient  = self.surface_kernel.gradient(points = points[None, :, :], 
+                                                         centre = endpoints[:, None, :])
+        surface_gradient *= returned[:, None, None]
+
+        free_gradient = self.free_kernel.convolve_line_gradient(points = points[None, :, :],
+                                                                start  = origins[:, None, :],
+                                                                end    = endpoints[:, None, :])
+
+        free_gradient = normalisation[:, None, None] * (free_gradient * (1.0 - surface)[..., None] - free[..., None] * surface_gradient)
+
+        free *= normalisation[:, None]
+        free *= 1.0 - surface
+
+        alpha = np.sum(weights[:, None] * surface, axis = 0)
+        beta  = np.sum(weights[:, None] * free,    axis = 0)
+
+        alpha_gradient = np.sum(weights[:, None, None] * surface_gradient, axis = 0)
+        beta_gradient  = np.sum(weights[:, None, None] * free_gradient, axis = 0)
 
         if np.any(returned):
-            surface_distance = self.surface_kernel.distance(points = points[None, :, :],
-                                                            centre = endpoints[:, None, :])
-
-            support = np.any(returned[:, None] & (surface_distance <= self.support_sigma**2), axis = 0)
-
+            distance = self.surface_kernel.distance(points = points[None, :, :], centre = endpoints[:, None, :])
+            support = np.any(returned[:, None] & (distance <= self.support_sigma**2), axis = 0)
         else:
             support = np.zeros(len(points), dtype = bool)
 
-        return alpha, beta, support
+        return alpha, beta, alpha_gradient, beta_gradient, support
 
 
     def query(self,
@@ -184,10 +204,9 @@ class OccupancyField:
         alpha = np.asarray(alpha, dtype = float)
         beta  = np.asarray(beta,  dtype = float)
 
-        require(alpha.shape == (len(points),), ValueError, "prior alpha must have shape (n,)")
-        require(beta.shape == (len(points),),  ValueError, "prior beta must have shape (n,)")
-
-        support = np.zeros(len(points), dtype = bool)
+        alpha_gradient = np.zeros_like(points)
+        beta_gradient  = np.zeros_like(points)
+        support        = np.zeros(len(points), dtype = bool)
 
         if self.observations:
 
@@ -200,20 +219,24 @@ class OccupancyField:
                             if observation.time <= time]
 
             if observations:
-                alpha_evidence, beta_evidence, support = self.evidence(observations = observations,
-                                                                       points       = points)
+                alpha_evidence, beta_evidence, alpha_gradient, beta_gradient, support = self.evidence(observations = observations,
+                                                                                                      points       = points)
 
                 alpha += alpha_evidence
                 beta  += beta_evidence
 
         if scalar:
-            return OccupancyQuery(alpha   = float(alpha[0]),
-                                  beta    = float(beta[0]),
-                                  support = bool(support[0]))
+            return OccupancyQuery(alpha          = float(alpha[0]),
+                                beta           = float(beta[0]),
+                                alpha_gradient = alpha_gradient[0],
+                                beta_gradient  = beta_gradient[0],
+                                support        = bool(support[0]))
 
-        return OccupancyQuery(alpha   = alpha,
-                              beta    = beta,
-                              support = support)
+        return OccupancyQuery(alpha          = alpha,
+                            beta           = beta,
+                            alpha_gradient = alpha_gradient,
+                            beta_gradient  = beta_gradient,
+                            support        = support)
 
 
     def _prepare(self,

@@ -7,17 +7,13 @@ import numpy as np
 
 @dataclass
 class OccupancyQuery:
-    """Represents the Beta distribution returned by an occupancy query.
+    """Represents the Beta distribution returned by an occupancy query."""
 
-    Attributes:
-        alpha: Occupancy evidence parameter of the Beta distribution.
-        beta: Free-space evidence parameter of the Beta distribution.
-        support: Whether the queried location is supported by observations.
-    """
-
-    alpha   : np.ndarray | float
-    beta    : np.ndarray | float
-    support : np.ndarray | bool
+    alpha          : np.ndarray | float
+    beta           : np.ndarray | float
+    alpha_gradient : np.ndarray 
+    beta_gradient  : np.ndarray
+    support        : np.ndarray | bool
 
 
     @property
@@ -40,4 +36,15 @@ class OccupancyQuery:
 
         concentration = self.concentration
 
-        return ((self.alpha*self.beta) / (concentration**2*(concentration + 1.0)))
+        return ((self.alpha*self.beta)
+                / (concentration**2*(concentration + 1.0)))
+
+
+    @property
+    def gradient(self) -> np.ndarray:
+        """Returns the spatial gradient of the expected occupancy."""
+
+        concentration = np.asarray(self.concentration)
+
+        return (np.asarray(self.beta)[..., None]*self.alpha_gradient  - 
+                np.asarray(self.alpha)[..., None]*self.beta_gradient) / concentration[..., None]**2

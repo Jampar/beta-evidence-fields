@@ -40,10 +40,11 @@ def test_distance_at_centre():
 
 def test_distance_identity():
 
-    kernel   = GaussianKernel(np.eye(2))
-    points   = np.array([[1.0, 0.0],
-                         [0.0, 2.0],
-                         [1.0, 2.0]])
+    kernel = GaussianKernel(np.eye(2))
+
+    points = np.array([[1.0, 0.0],
+                       [0.0, 2.0],
+                       [1.0, 2.0]])
 
     centre   = np.zeros(2)
     expected = np.array([1.0, 4.0, 5.0])
@@ -140,57 +141,89 @@ def test_evaluate_vectorised():
 
     kernel = GaussianKernel(np.eye(2))
 
-    points   = np.array([[0.0, 0.0],
-                         [1.0, 0.0],
-                         [0.0, 2.0]])
+    points = np.array([[0.0, 0.0],
+                       [1.0, 0.0],
+                       [0.0, 2.0]])
 
     values   = kernel.evaluate(points, np.zeros(2))
-    expected = np.exp(-0.5 * np.array([0.0, 1.0, 4.0]))
+    expected = np.exp(-0.5*np.array([0.0, 1.0, 4.0]))
 
     np.testing.assert_allclose(values,
                                expected)
-    
+
+
+def test_gradient_at_centre():
+
+    kernel = GaussianKernel(np.eye(2))
+    centre = np.array([1.0, 2.0])
+
+    gradient = kernel.gradient(points = centre,
+                               centre = centre)
+
+    np.testing.assert_allclose(gradient,
+                               np.zeros(2))
+
 
 def test_gradient_matches_finite_difference():
 
-    kernel = GaussianKernel(np.array([
-        [2.0, 0.3],
-        [0.3, 1.0],
-    ]))
+    kernel = GaussianKernel(np.array([[2.0, 0.3],
+                                      [0.3, 1.0]]))
 
     point  = np.array([1.2, -0.7])
     centre = np.array([0.3,  0.4])
 
-    gradient = kernel.gradient(point, centre)
+    gradient = kernel.gradient(points = point,
+                               centre = centre)
 
     epsilon = 1e-6
     finite  = np.empty(2)
 
     for i in range(2):
+
         offset    = np.zeros(2)
         offset[i] = epsilon
-        finite[i] = (kernel.evaluate(point + offset, centre) - kernel.evaluate(point - offset, centre))/(2*epsilon)
 
-    np.testing.assert_allclose(gradient, 
-                               finite, 
-                               rtol = 1e-5, 
+        finite[i] = (
+            kernel.evaluate(point + offset, centre)
+            - kernel.evaluate(point - offset, centre)
+        )/(2.0*epsilon)
+
+    np.testing.assert_allclose(gradient,
+                               finite,
+                               rtol = 1e-5,
                                atol = 1e-7)
 
 
-def test_gradient_rejects_wrong_point_dimension():
+def test_gradient_vectorised():
 
     kernel = GaussianKernel(np.eye(2))
 
-    with pytest.raises(ValueError, match="Point dimension does not match covariance"):
+    points = np.array([[0.0, 0.0],
+                       [1.0, 0.0],
+                       [0.0, 2.0]])
+
+    gradient = kernel.gradient(points = points,
+                               centre = np.zeros(2))
+
+    expected = -points*np.exp(
+        -0.5*np.sum(points**2, axis = 1)
+    )[:, None]
+
+    assert gradient.shape == points.shape
+
+    np.testing.assert_allclose(gradient,
+                               expected)
+
+
+def test_gradient_dimension_validation():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    with pytest.raises(ValueError, match = "Point dimension does not match covariance"):
         kernel.gradient(points = np.zeros(3),
                         centre = np.zeros(2))
 
-
-def test_gradient_rejects_wrong_centre_dimension():
-
-    kernel = GaussianKernel(np.eye(2))
-
-    with pytest.raises(ValueError, match="Centre dimension does not match covariance"):
+    with pytest.raises(ValueError, match = "Centre dimension does not match covariance"):
         kernel.gradient(points = np.zeros(2),
                         centre = np.zeros(3))
 
@@ -200,18 +233,20 @@ def test_convolve_line_against_numerical_integration():
     kernel = GaussianKernel(np.array([[2.0, 0.3],
                                       [0.3, 1.0]]))
 
-    point     = np.array([0.4, 0.7])
-    start     = np.array([-1.0, 0.2])
-    end       = np.array([2.0, 1.4])
+    point = np.array([0.4, 0.7])
+    start = np.array([-1.0, 0.2])
+    end   = np.array([2.0, 1.4])
 
     segment   = end - start
     length    = np.linalg.norm(segment)
     direction = segment/length
 
-    numerical, _ = quad(lambda s: kernel.evaluate(point,
-                                                   start + s*direction),
-                        0.0,
-                        length)
+    numerical, _ = quad(
+        lambda s: kernel.evaluate(point,
+                                  start + s*direction),
+        0.0,
+        length,
+    )
 
     analytic = kernel.convolve_line(points = point,
                                     start  = start,
@@ -244,10 +279,10 @@ def test_convolve_line_vectorised():
                        [1.0, 1.0]])
 
     starts = np.array([[-1.0, 0.0],
-                       [0.0, 1.0]])
+                       [0.0,  1.0]])
 
-    ends   = np.array([[1.0, 0.0],
-                       [2.0, 1.0]])
+    ends = np.array([[1.0, 0.0],
+                     [2.0, 1.0]])
 
     values = kernel.convolve_line(points = points,
                                   start  = starts,
@@ -262,20 +297,114 @@ def test_convolve_line_dimension_validation():
 
     kernel = GaussianKernel(np.eye(2))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match = "Point dimension does not match covariance"):
         kernel.convolve_line(points = np.zeros(3),
                              start  = np.zeros(2),
                              end    = np.zeros(2))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match = "Line start dimension does not match covariance"):
         kernel.convolve_line(points = np.zeros(2),
                              start  = np.zeros(3),
                              end    = np.zeros(2))
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match = "Line end dimension does not match covariance"):
         kernel.convolve_line(points = np.zeros(2),
                              start  = np.zeros(2),
                              end    = np.zeros(3))
+
+
+def test_convolve_line_gradient_matches_finite_difference():
+
+    kernel = GaussianKernel(np.array([[2.0, 0.3],
+                                      [0.3, 1.0]]))
+
+    point = np.array([0.4, 0.7])
+    start = np.array([-1.0, 0.2])
+    end   = np.array([2.0, 1.4])
+
+    gradient = kernel.convolve_line_gradient(points = point,
+                                             start  = start,
+                                             end    = end)
+
+    epsilon = 1e-6
+    finite  = np.empty(2)
+
+    for i in range(2):
+
+        offset    = np.zeros(2)
+        offset[i] = epsilon
+
+        finite[i] = (
+            kernel.convolve_line(points = point + offset,
+                                 start  = start,
+                                 end    = end)
+            - kernel.convolve_line(points = point - offset,
+                                   start  = start,
+                                   end    = end)
+        )/(2.0*epsilon)
+
+    np.testing.assert_allclose(gradient,
+                               finite,
+                               rtol = 1e-5,
+                               atol = 1e-7)
+
+
+def test_convolve_line_gradient_zero_length():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    point = np.array([1.0, 1.0])
+    start = np.array([0.0, 0.0])
+
+    gradient = kernel.convolve_line_gradient(points = point,
+                                             start  = start,
+                                             end    = start)
+
+    np.testing.assert_allclose(gradient,
+                               np.zeros(2))
+
+    assert np.all(np.isfinite(gradient))
+
+
+def test_convolve_line_gradient_vectorised():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    points = np.array([[0.0, 0.5],
+                       [1.0, 1.5]])
+
+    starts = np.array([[-1.0, 0.0],
+                       [0.0,  1.0]])
+
+    ends = np.array([[1.0, 0.0],
+                     [2.0, 1.0]])
+
+    gradient = kernel.convolve_line_gradient(points = points,
+                                             start  = starts,
+                                             end    = ends)
+
+    assert gradient.shape == points.shape
+    assert np.all(np.isfinite(gradient))
+
+
+def test_convolve_line_gradient_dimension_validation():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    with pytest.raises(ValueError, match = "Point dimension does not match covariance"):
+        kernel.convolve_line_gradient(points = np.zeros(3),
+                                      start  = np.zeros(2),
+                                      end    = np.zeros(2))
+
+    with pytest.raises(ValueError, match = "Line start dimension does not match covariance"):
+        kernel.convolve_line_gradient(points = np.zeros(2),
+                                      start  = np.zeros(3),
+                                      end    = np.zeros(2))
+
+    with pytest.raises(ValueError, match = "Line end dimension does not match covariance"):
+        kernel.convolve_line_gradient(points = np.zeros(2),
+                                      start  = np.zeros(2),
+                                      end    = np.zeros(3))
 
 
 def test_three_dimensions():
@@ -288,3 +417,70 @@ def test_three_dimensions():
     assert kernel.distance(point, centre) == pytest.approx(9.0)
     assert kernel.evaluate(point, centre) == pytest.approx(np.exp(-4.5))
 
+
+def test_gradient_three_dimensions():
+
+    kernel = GaussianKernel(np.array([[2.0, 0.2, 0.0],
+                                      [0.2, 1.0, 0.1],
+                                      [0.0, 0.1, 1.5]]))
+
+    point  = np.array([0.4, 0.7, -0.2])
+    centre = np.array([-0.3, 0.1, 0.4])
+
+    gradient = kernel.gradient(points = point,
+                               centre = centre)
+
+    epsilon = 1e-6
+    finite  = np.empty(3)
+
+    for i in range(3):
+
+        offset    = np.zeros(3)
+        offset[i] = epsilon
+
+        finite[i] = (
+            kernel.evaluate(point + offset, centre)
+            - kernel.evaluate(point - offset, centre)
+        )/(2.0*epsilon)
+
+    np.testing.assert_allclose(gradient,
+                               finite,
+                               rtol = 1e-5,
+                               atol = 1e-7)
+
+
+def test_convolve_line_gradient_three_dimensions():
+
+    kernel = GaussianKernel(np.array([[2.0, 0.2, 0.0],
+                                      [0.2, 1.0, 0.1],
+                                      [0.0, 0.1, 1.5]]))
+
+    point = np.array([0.4, 0.7, -0.2])
+    start = np.array([-1.0, 0.2, 0.5])
+    end   = np.array([2.0, 1.4, -0.3])
+
+    gradient = kernel.convolve_line_gradient(points = point,
+                                             start  = start,
+                                             end    = end)
+
+    epsilon = 1e-6
+    finite  = np.empty(3)
+
+    for i in range(3):
+
+        offset    = np.zeros(3)
+        offset[i] = epsilon
+
+        finite[i] = (
+            kernel.convolve_line(points = point + offset,
+                                 start  = start,
+                                 end    = end)
+            - kernel.convolve_line(points = point - offset,
+                                   start  = start,
+                                   end    = end)
+        )/(2.0*epsilon)
+
+    np.testing.assert_allclose(gradient,
+                               finite,
+                               rtol = 1e-5,
+                               atol = 1e-7)
