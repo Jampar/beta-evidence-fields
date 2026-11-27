@@ -149,6 +149,32 @@ def test_evaluate_vectorised():
 
     np.testing.assert_allclose(values,
                                expected)
+    
+
+def test_gradient_matches_finite_difference():
+
+    kernel = GaussianKernel(np.array([
+        [2.0, 0.3],
+        [0.3, 1.0],
+    ]))
+
+    point  = np.array([1.2, -0.7])
+    centre = np.array([0.3,  0.4])
+
+    gradient = kernel.gradient(point, centre)
+
+    epsilon = 1e-6
+    finite  = np.empty(2)
+
+    for i in range(2):
+        offset    = np.zeros(2)
+        offset[i] = epsilon
+        finite[i] = (kernel.evaluate(point + offset, centre) - kernel.evaluate(point - offset, centre))/(2*epsilon)
+
+    np.testing.assert_allclose(gradient, 
+                               finite, 
+                               rtol = 1e-5, 
+                               atol = 1e-7)
 
 
 def test_convolve_line_against_numerical_integration():
@@ -243,3 +269,4 @@ def test_three_dimensions():
 
     assert kernel.distance(point, centre) == pytest.approx(9.0)
     assert kernel.evaluate(point, centre) == pytest.approx(np.exp(-4.5))
+

@@ -147,6 +147,30 @@ class GaussianKernel:
                                          centre = centre))
 
 
+    def gradient(self,
+                 points : np.ndarray,
+                 centre : np.ndarray) -> np.ndarray:
+        """Evaluates the spatial gradient of the Gaussian kernel."""
+
+        points = np.asarray(points, dtype = float)
+        centre = np.asarray(centre, dtype = float)
+
+        if points.shape[-1] != self.dimension:
+            raise ValueError("Point dimension does not match covariance.")
+
+        if centre.shape[-1] != self.dimension:
+            raise ValueError("Centre dimension does not match covariance.")
+
+        difference = points - centre
+        values     = self.evaluate(points = points,
+                                centre = centre)
+
+        return -values[..., None]*np.einsum("ij,...j->...i",
+                                            self.precision,
+                                            difference,
+                                            optimize = True)
+
+
     def convolve_line(self,
                       points : np.ndarray,
                       start  : np.ndarray,
