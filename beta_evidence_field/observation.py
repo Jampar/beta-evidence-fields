@@ -50,7 +50,7 @@ class OccupancyObservation:
 
         return np.concatenate((self.origin,
                                self.direction,
-                               np.array([self.range, self.time])))
+                               np.array([self.time])))
 
 
     @property

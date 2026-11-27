@@ -11,15 +11,14 @@ free:
     - [0.00, 0.10]
 
 state:
-  # Observation-state covariance [origin_x, origin_y, direction_x, direction_y, range, time].
+  # Acquisition-state covariance [origin_x, origin_y, direction_x, direction_y, time].
   # Defines the scale over which observations are considered redundant.
   covariance:
-    - [1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    - [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
-    - [0.0, 0.0, 0.1, 0.0, 0.0, 0.0]
-    - [0.0, 0.0, 0.0, 0.1, 0.0, 0.0]
-    - [0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-    - [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+    - [1.0, 0.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 0.0, 1.0]
 
   # Prunes observations beyond this many temporal standard deviations.
   temporal_support_sigma: 3.0

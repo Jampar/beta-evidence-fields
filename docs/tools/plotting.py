@@ -205,16 +205,6 @@ def plot_query_2d(X     : np.ndarray,
                         scale       = GRADIENT_SCALE,
                         alpha       = 0.6)
 
-        if len(origins):
-
-            axis.scatter(origins[:, 0],
-                         origins[:, 1],
-                         color  = "black",
-                         marker = "x",
-                         s      = 10,
-                         alpha  = 0.25,
-                         zorder = 10)
-
         if returned:
 
             endpoints = np.asarray([observation.endpoint
@@ -224,7 +214,7 @@ def plot_query_2d(X     : np.ndarray,
                          endpoints[:, 1],
                          color     = "black",
                          marker    = "o",
-                         s         = 20,
+                         s         = 10,
                          linewidth = 1.0,
                          alpha     = 0.25,
                          zorder    = 10)
