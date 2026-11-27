@@ -1,14 +1,14 @@
 surface:
   # Spatial covariance of occupied evidence around returned endpoints [x, y].
   covariance:
-    - [0.01, 0.00]
-    - [0.00, 0.01]
+    - [0.10, 0.00]
+    - [0.00, 0.10]
 
 free:
   # Spatial covariance of free-space evidence along observation rays [x, y].
   covariance:
-    - [0.04, 0.00]
-    - [0.00, 0.04]
+    - [0.10, 0.00]
+    - [0.00, 0.10]
 
 state:
   # Observation-state covariance [origin_x, origin_y, direction_x, direction_y, range, time].
