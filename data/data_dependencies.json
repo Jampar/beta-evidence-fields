@@ -1,9 +1,0 @@
-{
-    "underwater_caves": {
-        "description": "Underwater Caves Sonar and Vision Data Set",
-        "url": "https://zenodo.org/record/7828405/files/full_dataset.zip?download=1",
-        "archive": "full_dataset.zip",
-        "directory": "underwater_caves",
-        "extract": true
-    }
-}
