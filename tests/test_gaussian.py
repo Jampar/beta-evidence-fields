@@ -177,6 +177,24 @@ def test_gradient_matches_finite_difference():
                                atol = 1e-7)
 
 
+def test_gradient_rejects_wrong_point_dimension():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    with pytest.raises(ValueError, match="Point dimension does not match covariance"):
+        kernel.gradient(points = np.zeros(3),
+                        centre = np.zeros(2))
+
+
+def test_gradient_rejects_wrong_centre_dimension():
+
+    kernel = GaussianKernel(np.eye(2))
+
+    with pytest.raises(ValueError, match="Centre dimension does not match covariance"):
+        kernel.gradient(points = np.zeros(2),
+                        centre = np.zeros(3))
+
+
 def test_convolve_line_against_numerical_integration():
 
     kernel = GaussianKernel(np.array([[2.0, 0.3],
