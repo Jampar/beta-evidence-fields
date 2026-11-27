@@ -130,7 +130,7 @@ class OccupancyField:
         directions          = np.asarray([o.direction for o in observations], dtype = float)
         endpoints           = np.asarray([o.endpoint  for o in observations], dtype = float)
         returned            = np.asarray([o.returned  for o in observations], dtype = bool)
-        observation_weights = np.asarray([o.weight for o in observations],    dtype = float)
+        observation_weights = np.asarray([o.weight    for o in observations], dtype = float)
 
         if (len(observations) == len(self.observations) and 
             all(observation is retained for observation, retained in zip(observations, self.observations))):
